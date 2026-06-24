@@ -1,11 +1,11 @@
 import { appTitle } from "./app-info"
-import { NoteEditor } from "./editor/NoteEditor"
+import { NoteWorkspace } from "./editor/NoteWorkspace"
 
 export function App() {
   return (
     <main>
       <h1>{appTitle()}</h1>
-      <NoteEditor />
+      <NoteWorkspace />
     </main>
   )
 }

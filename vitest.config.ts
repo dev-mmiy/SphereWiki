@@ -21,6 +21,7 @@ export default defineConfig({
           name: "desktop",
           include: ["apps/desktop/src/**/*.test.{ts,tsx}"],
           environment: "jsdom",
+          setupFiles: [path.resolve(import.meta.dirname, "apps/desktop/vitest.setup.ts")],
         },
       },
     ],
