@@ -4,7 +4,16 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts --clean",
+    "build": "tsup src/index.ts --format esm --clean",
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hocuspocus/provider": "^4.3.0",
+    "@hocuspocus/server": "^4.3.0",
+    "@spherewiki/shared": "workspace:*",
+    "yjs": "^13.6.31"
+  },
+  "devDependencies": {
+    "@types/node": "26.0.0"
   }
 }

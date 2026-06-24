@@ -1,8 +1,6 @@
-/**
- * @spherewiki/server — the subscription super-peer + control plane: Next.js + Hocuspocus
- * on GCP (Cloud SQL + pgvector, GCS), WorkOS auth, server-side AI as a CRDT peer.
- *
- * M0 stub — the real server lands in M3 (see docs/ROADMAP.md).
- */
+import { createSyncServer } from "./sync-server"
 
-export const SERVER_NAME = "spherewiki-server" as const
+const port = Number(process.env.PORT ?? 8787)
+const server = createSyncServer({ port })
+await server.listen()
+console.log(`[spherewiki] sync super-peer listening on ${server.webSocketURL}`)

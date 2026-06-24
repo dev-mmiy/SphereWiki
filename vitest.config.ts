@@ -8,6 +8,7 @@ export default defineConfig({
   test: {
     projects: [
       {
+        resolve: { alias: { "@spherewiki/shared": sharedSrc } },
         test: {
           name: "node",
           include: ["packages/*/src/**/*.test.ts", "apps/server/src/**/*.test.ts"],
