@@ -92,7 +92,11 @@ importers:
         specifier: 26.0.0
         version: 26.0.0
 
-  packages/ai: {}
+  packages/ai:
+    dependencies:
+      '@spherewiki/shared':
+        specifier: workspace:*
+        version: link:../shared
 
   packages/shared:
     dependencies:
