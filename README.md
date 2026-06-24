@@ -23,4 +23,4 @@ Monorepo (pnpm workspaces):
 - `apps/desktop` — Tauri 2 + React + CodeMirror 6 client (local-first)
 - `apps/server` — Hocuspocus super-peer + Next.js API (GCP)
 
-Current state: **M2a (editor-first) complete** — the desktop app runs as a Vite/React web build with the CodeMirror↔Yjs editor, a multi-note vault, wikilink/backlinks navigation, and commit/diff/revert history (`pnpm dev`). Native shell + on-disk `.md` vault + DuckDB search (Tauri/Rust) are the deferred **M2b**. See [docs/ROADMAP.md](docs/ROADMAP.md).
+Current state: **M2a (editor-first) complete** — the desktop app runs as a Vite/React web build with the CodeMirror↔Yjs editor, a multi-note vault, wikilink/backlinks navigation, and commit/diff/revert history (`pnpm dev`). Native shell + on-disk `.md` vault + DuckDB search (Tauri/Rust) are the deferred **M2b**. The **M3a** sync/persistence/auth foundations (swappable seams, unit-tested) have also landed; their real transport + WorkOS/GCP wiring is the deferred **M3b**. See [docs/ROADMAP.md](docs/ROADMAP.md).

@@ -53,8 +53,11 @@ Each milestone ends green on all Loop gates (`pnpm verify`) and meets its accept
 **M2b — Native shell & persistence (deferred — needs Rust/Tauri).** Tauri 2 wrap; **on-disk Markdown vault** (file-backed `Vault` behind the existing seam); **DuckDB** local index (FTS/graph/vectors) + idempotent `reindex`. Split out of the editor-first slice because it needs the Rust toolchain (heavy on a slow link) — best done in a dedicated session.
 *Done when:* the desktop app reads/writes a real `.md` vault offline and search works.
 
-**M3 — Accounts + async multi-user sync.** WorkOS auth (accounts/org/workspaces/roles, offline session); `server` (Next.js + Hocuspocus + Cloud SQL + GCS); desktop syncs a workspace via the super-peer; **isolation** (RLS + mandatory scope).
-*Done when:* two users share a workspace, edits converge with no loss, and cross-workspace access is provably blocked.
+**M3a — Sync, persistence & auth foundations (done, local-testable).** The super-peer **sync seam** (in-memory hub: two-client convergence, server-readable authoritative replica, no echo); the **persistence seam** (durable per-room replica, restored across restart, per-room isolation); the **auth seam** (sessions/roles + `can`/`roleFor`, non-member = no access). All pure, swappable, unit-tested — no external services.
+*Done:* ✅ convergence, durability, and permission checks proven in tests; `pnpm verify` green.
+
+**M3b — Real transport & control plane (deferred — sockets + credentials).** Hocuspocus **WebSocket** transport implementing the sync seam; **WorkOS** AuthKit implementing the auth seam; **Cloud SQL + GCS** implementing the persistence seam; isolation enforced by Postgres RLS + scope. Deferred because it needs socket integration and WorkOS/GCP credentials — best in a dedicated session.
+*Done when:* two real clients share a workspace over the network, edits converge with no loss, and cross-workspace access is provably blocked.
 
 **M4 — On-save AI agent + RAG (the differentiator).** Embeddings (e5-small ONNX) on desktop + server with the consistency contract; pgvector index; **server-side AI as a CRDT peer** (BYO Claude key via Secret Manager) doing **auto-link + auto-tag** on save; basic RAG Q&A; AI edits attributed + revertible.
 *Done when:* saving a note triggers AI links/tags that appear as attributed, revertible edits, and Q&A returns cited answers scoped to the workspace.
