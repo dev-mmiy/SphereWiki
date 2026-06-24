@@ -5,15 +5,17 @@ export function HistoryPanel({
   onCommit,
   onRevert,
   onDiff,
+  canEdit = true,
 }: {
   versions: readonly Version[]
   onCommit: () => void
   onRevert: (id: string) => void
   onDiff: (id: string) => void
+  canEdit?: boolean
 }) {
   return (
     <aside>
-      <button type="button" onClick={onCommit}>
+      <button type="button" onClick={onCommit} disabled={!canEdit}>
         Commit version
       </button>
       <ul>
@@ -23,7 +25,7 @@ export function HistoryPanel({
             <button type="button" onClick={() => onDiff(v.id)}>
               Diff
             </button>{" "}
-            <button type="button" onClick={() => onRevert(v.id)}>
+            <button type="button" onClick={() => onRevert(v.id)} disabled={!canEdit}>
               Revert
             </button>
           </li>

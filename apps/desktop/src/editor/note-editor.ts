@@ -5,14 +5,22 @@ import { yCollab } from "y-codemirror.next"
 
 /**
  * Mount a CodeMirror 6 source editor bound to the note's Yjs text. This is the
- * engine seam: it is allowed to touch Yjs (via the note's `ytext`) because the
- * editor binding is inherently engine-specific. Everything else uses `CrdtNote`.
- *
+ * engine seam: it may touch Yjs (via `ytext`) because the editor binding is
+ * inherently engine-specific. `editable` reflects the viewer's write permission.
  * `awareness` is null in M2 (single-user, no remote cursors yet).
  */
-export function mountEditor(parent: HTMLElement, note: YjsBackedNote): EditorView {
+export function mountEditor(
+  parent: HTMLElement,
+  note: YjsBackedNote,
+  options: { editable?: boolean } = {},
+): EditorView {
   return new EditorView({
     parent,
-    extensions: [basicSetup, markdown(), yCollab(note.ytext, null)],
+    extensions: [
+      basicSetup,
+      markdown(),
+      yCollab(note.ytext, null),
+      EditorView.editable.of(options.editable ?? true),
+    ],
   })
 }

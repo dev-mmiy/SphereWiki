@@ -5,15 +5,17 @@ export function NoteList({
   activeId,
   onSelect,
   onCreate,
+  canCreate = true,
 }: {
   notes: readonly NoteMeta[]
   activeId: NoteId
   onSelect: (id: NoteId) => void
   onCreate: () => void
+  canCreate?: boolean
 }) {
   return (
     <nav>
-      <button type="button" onClick={onCreate}>
+      <button type="button" onClick={onCreate} disabled={!canCreate}>
         New note
       </button>
       <ul>
