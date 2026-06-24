@@ -13,5 +13,9 @@
   },
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts --clean"
+  },
+  "dependencies": {
+    "yaml": "^2.9.0",
+    "yjs": "^13.6.31"
   }
 }

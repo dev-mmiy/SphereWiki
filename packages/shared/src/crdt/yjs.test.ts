@@ -1,0 +1,67 @@
+import { describe, expect, it } from "vitest"
+import type { CrdtTextEvent, EditOrigin } from "./types"
+import { yjsEngine } from "./yjs"
+
+const human: EditOrigin = { actor: "alice", kind: "human" }
+const ai: EditOrigin = { actor: "ai-agent", kind: "ai" }
+
+describe("yjsEngine", () => {
+  it("sets and reads text", () => {
+    const note = yjsEngine.open()
+    note.setText("# Hello", human)
+    expect(note.getText()).toBe("# Hello")
+    note.destroy()
+  })
+
+  it("emits one tagged, local event per edit", () => {
+    const note = yjsEngine.open()
+    note.setText("the quick brown fox", human)
+    const events: CrdtTextEvent[] = []
+    const off = note.subscribe((e) => events.push(e))
+    note.setText("the quick red fox", ai)
+    off()
+    expect(note.getText()).toBe("the quick red fox")
+    expect(events).toHaveLength(1)
+    expect(events[0]?.origin).toEqual(ai)
+    expect(events[0]?.remote).toBe(false)
+    note.destroy()
+  })
+
+  it("merges concurrent edits at different positions with no loss", () => {
+    const a = yjsEngine.open()
+    a.setText("hello world", human)
+    const b = yjsEngine.open(a.encodeState())
+    a.setText("HELLO world", human) // edit the start
+    b.setText("hello WORLD", { actor: "bob", kind: "human" }) // edit the end
+    a.applyUpdate(b.encodeState())
+    b.applyUpdate(a.encodeState())
+    expect(a.getText()).toBe(b.getText()) // CRDT convergence
+    expect(a.getText()).toContain("HELLO")
+    expect(a.getText()).toContain("WORLD")
+    a.destroy()
+    b.destroy()
+  })
+
+  it("round-trips through encodeState", () => {
+    const note = yjsEngine.open()
+    note.setText("payload", human)
+    const restored = yjsEngine.open(note.encodeState())
+    expect(restored.getText()).toBe("payload")
+    note.destroy()
+    restored.destroy()
+  })
+
+  it("flags merged remote updates as remote", () => {
+    const a = yjsEngine.open()
+    a.setText("base", human)
+    const b = yjsEngine.open(a.encodeState())
+    const remoteFlags: boolean[] = []
+    const off = b.subscribe((e) => remoteFlags.push(e.remote))
+    a.setText("base + more", human)
+    b.applyUpdate(a.encodeState())
+    off()
+    expect(remoteFlags.at(-1)).toBe(true)
+    a.destroy()
+    b.destroy()
+  })
+})

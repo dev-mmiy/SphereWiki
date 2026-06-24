@@ -23,4 +23,4 @@ Monorepo (pnpm workspaces):
 - `apps/desktop` — Tauri 2 + React + CodeMirror 6 client (local-first)
 - `apps/server` — Hocuspocus super-peer + Next.js API (GCP)
 
-Current state: **M0** — repository skeleton with the Loop gates wired (stubs). See [docs/ROADMAP.md](docs/ROADMAP.md).
+Current state: **M1 complete** — `packages/shared` core landed (Markdown/frontmatter, wikilinks/backlinks/graph, the Yjs CRDT adapter, and the engine-agnostic versioning layer). See [docs/ROADMAP.md](docs/ROADMAP.md).

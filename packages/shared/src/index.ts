@@ -1,12 +1,14 @@
 /**
  * @spherewiki/shared — platform-free core shared by desktop, server, and tests:
- * Markdown/frontmatter parsing, wikilink/backlink/graph logic, the CRDT adapter,
- * the engine-agnostic versioning layer, and shared types.
- *
- * M0 stub — real modules land in M1 (see docs/ROADMAP.md).
+ * Markdown/frontmatter parsing, wikilink/backlink/graph logic, shared types,
+ * the thin CRDT adapter (AD-4), and the engine-agnostic versioning layer (AD-5).
  */
 
-/** Matches a bare wikilink token such as `[[Note Name]]`. */
-export function isWikiLink(token: string): boolean {
-  return /^\[\[[^[\]]+\]\]$/.test(token)
-}
+export * from "./crdt/types"
+export * from "./crdt/yjs"
+export * from "./frontmatter"
+export * from "./types"
+export * from "./version/diff"
+export * from "./version/memory"
+export * from "./version/types"
+export * from "./wikilink"
