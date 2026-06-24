@@ -1,0 +1,8 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+allowBuilds:
+  esbuild: true
+# Resilient fetch defaults — helps on slow networks, harmless on fast ones.
+fetchTimeout: 600000
+fetchRetries: 5

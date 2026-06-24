@@ -1,0 +1,28 @@
+{
+  "name": "spherewiki",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.9.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "verify": "pnpm typecheck && pnpm lint && pnpm test && pnpm build",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "test": "vitest run",
+    "build": "pnpm -r build",
+    "reindex": "node scripts/reindex.mjs",
+    "dev": "echo \"[dev] desktop app arrives in M2 — see docs/ROADMAP.md\"",
+    "dev:server": "echo \"[dev:server] sync server arrives in M3 — see docs/ROADMAP.md\""
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.0",
+    "@types/node": "26.0.0",
+    "tsup": "8.5.1",
+    "typescript": "6.0.3",
+    "vitest": "4.1.9"
+  }
+}
