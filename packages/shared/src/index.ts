@@ -4,6 +4,9 @@
  * the thin CRDT adapter (AD-4), and the engine-agnostic versioning layer (AD-5).
  */
 
+export * from "./auth/memory"
+export * from "./auth/permissions"
+export * from "./auth/types"
 export * from "./crdt/types"
 export * from "./crdt/yjs"
 export * from "./frontmatter"
