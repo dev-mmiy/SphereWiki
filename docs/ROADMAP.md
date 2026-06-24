@@ -47,8 +47,11 @@ Each milestone ends green on all Loop gates (`pnpm verify`) and meets its accept
 **M1 — `shared` core (offline, pure).** Markdown/frontmatter parsing; wikilink/backlink/graph; the **CRDT adapter (Yjs)** + **engine-agnostic version layer** (snapshot / restore / diff / revert / attribution contract); shared types.
 *Done when:* unit-tested, platform-free, with strong coverage on link integrity and version revert.
 
-**M2 — Desktop editor (single-user, local).** Tauri 2 + React; CodeMirror 6 ↔ per-note Yjs; local DuckDB index; wikilink/backlink/graph UI; **history/diff/revert UI**; idempotent `reindex`.
-*Done when:* a single user edits a local vault fully offline, with working history/revert and search.
+**M2a — Desktop editor, editor-first (done).** Vite + React; CodeMirror 6 ↔ per-note Yjs; multi-note in-memory `Vault`; wikilink/backlink/graph navigation; **history/diff/revert UI**. Runtime-verified via jsdom render + hook tests; runs today as a web build (`pnpm dev`).
+*Done:* ✅ a single user edits, navigates links, and uses history/revert; `pnpm verify` green.
+
+**M2b — Native shell & persistence (deferred — needs Rust/Tauri).** Tauri 2 wrap; **on-disk Markdown vault** (file-backed `Vault` behind the existing seam); **DuckDB** local index (FTS/graph/vectors) + idempotent `reindex`. Split out of the editor-first slice because it needs the Rust toolchain (heavy on a slow link) — best done in a dedicated session.
+*Done when:* the desktop app reads/writes a real `.md` vault offline and search works.
 
 **M3 — Accounts + async multi-user sync.** WorkOS auth (accounts/org/workspaces/roles, offline session); `server` (Next.js + Hocuspocus + Cloud SQL + GCS); desktop syncs a workspace via the super-peer; **isolation** (RLS + mandatory scope).
 *Done when:* two users share a workspace, edits converge with no loss, and cross-workspace access is provably blocked.
