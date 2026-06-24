@@ -99,6 +99,19 @@ class YjsNote implements YjsBackedNote {
     return () => this.#text.unobserve(handler)
   }
 
+  onUpdate(listener: (update: CrdtUpdate, info: { local: boolean }) => void): () => void {
+    const handler = (
+      update: Uint8Array,
+      _origin: unknown,
+      _doc: Y.Doc,
+      tr: Y.Transaction,
+    ): void => {
+      listener(update, { local: tr.local })
+    }
+    this.#doc.on("update", handler)
+    return () => this.#doc.off("update", handler)
+  }
+
   destroy(): void {
     this.#doc.destroy()
   }

@@ -40,6 +40,8 @@ export interface CrdtNote {
   snapshot(): CrdtSnapshot
   /** Observe text changes; returns an unsubscribe function. */
   subscribe(listener: (event: CrdtTextEvent) => void): () => void
+  /** Observe raw CRDT updates for sync transports; `local` is false for merged remote updates. */
+  onUpdate(listener: (update: CrdtUpdate, info: { local: boolean }) => void): () => void
   /** Release resources. */
   destroy(): void
 }
