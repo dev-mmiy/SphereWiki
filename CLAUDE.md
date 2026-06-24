@@ -108,3 +108,8 @@ Monorepo (pnpm workspaces). Concerns: **desktop**, **web**, **server**, **shared
 - Every derived-state code path exposes a deterministic rebuild entrypoint (feeds `pnpm reindex` and the idempotency invariant).
 - Any code that reads or retrieves notes must take an explicit workspace scope — there is no ambient "all notes" access (enforces project isolation).
 - The CRDT engine is used **only behind a thin adapter**; the version-management layer and all product code depend on the adapter contract, not on Yjs types directly (engine-swappable — see AD-5).
+
+## Additional Rules
+
+1. **Respond in Japanese.**
+2. **Commit messages and specs must be written in English.**
