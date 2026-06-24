@@ -9,13 +9,13 @@
   },
   "scripts": {
     "verify": "pnpm typecheck && pnpm lint && pnpm test && pnpm build",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "pnpm -r typecheck",
     "lint": "biome check .",
     "format": "biome check --write .",
     "test": "vitest run",
     "build": "pnpm -r build",
     "reindex": "node scripts/reindex.mjs",
-    "dev": "echo \"[dev] desktop app arrives in M2 — see docs/ROADMAP.md\"",
+    "dev": "pnpm --filter @spherewiki/desktop dev",
     "dev:server": "echo \"[dev:server] sync server arrives in M3 — see docs/ROADMAP.md\""
   },
   "devDependencies": {

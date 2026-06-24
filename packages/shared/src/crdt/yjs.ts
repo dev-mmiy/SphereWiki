@@ -10,6 +10,12 @@ import type {
 
 /** The only file in the codebase that imports a concrete CRDT engine. */
 
+/** Yjs-only accessor for the editor seam — y-codemirror.next needs the real Y.Text. */
+export interface YjsBackedNote extends CrdtNote {
+  readonly ydoc: Y.Doc
+  readonly ytext: Y.Text
+}
+
 const TEXT_KEY = "body"
 
 function isEditOrigin(value: unknown): value is EditOrigin {
@@ -35,13 +41,21 @@ function diffSpan(current: string, next: string): { at: number; remove: number; 
   }
 }
 
-class YjsNote implements CrdtNote {
+class YjsNote implements YjsBackedNote {
   readonly #doc: Y.Doc
   readonly #text: Y.Text
 
   constructor(doc: Y.Doc) {
     this.#doc = doc
     this.#text = doc.getText(TEXT_KEY)
+  }
+
+  get ydoc(): Y.Doc {
+    return this.#doc
+  }
+
+  get ytext(): Y.Text {
+    return this.#text
   }
 
   getText(): string {
@@ -100,4 +114,9 @@ function openDoc(init?: CrdtUpdate): YjsNote {
 export const yjsEngine: CrdtEngine = {
   open: (init) => openDoc(init),
   fromSnapshot: (snapshot) => openDoc(snapshot),
+}
+
+/** Open a Yjs-backed note exposing the underlying doc/text for the editor seam. */
+export function openYjsNote(init?: CrdtUpdate): YjsBackedNote {
+  return openDoc(init)
 }

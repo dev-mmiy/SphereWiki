@@ -1,7 +1,5 @@
 {
+  "//": "Editor base only. Each package typechecks via its own tsconfig (pnpm -r typecheck).",
   "extends": "./tsconfig.base.json",
-  "compilerOptions": {
-    "noEmit": true
-  },
-  "include": ["apps/*/src", "packages/*/src"]
+  "files": []
 }
