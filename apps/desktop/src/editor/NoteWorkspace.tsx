@@ -1,27 +1,44 @@
-import type { DiffChunk, EditOrigin } from "@spherewiki/shared"
+import type { DiffChunk } from "@spherewiki/shared"
 import { useState } from "react"
 import { DiffView, HistoryPanel } from "./history-panel"
+import { LinksPanel } from "./links-panel"
 import { NoteEditor } from "./NoteEditor"
-import { useNoteSession } from "./use-note-session"
-
-const SAMPLE = "# Welcome to SphereWiki\n\nStart typing — this editor is backed by a CRDT.\n"
-const LOCAL: EditOrigin = { actor: "local", kind: "human" }
+import { NoteList } from "./note-list"
+import { useVaultWorkspace } from "./use-vault-workspace"
 
 export function NoteWorkspace() {
-  const session = useNoteSession(SAMPLE)
+  const ws = useVaultWorkspace()
   const [diff, setDiff] = useState<readonly DiffChunk[] | null>(null)
+  const clearDiff = () => setDiff(null)
 
   return (
     <div className="workspace">
-      <NoteEditor note={session.note} />
-      <HistoryPanel
-        versions={session.versions}
-        onCommit={() => session.commit(LOCAL)}
-        onRevert={(id) => {
-          session.revert(id, LOCAL)
-          setDiff(null)
+      <NoteList
+        notes={ws.notes}
+        activeId={ws.activeId}
+        onSelect={(id) => {
+          clearDiff()
+          ws.select(id)
         }}
-        onDiff={(id) => setDiff(session.diffAgainstCurrent(id))}
+        onCreate={() => ws.create(`Note ${ws.notes.length + 1}`)}
+      />
+      {ws.activeNote && <NoteEditor key={ws.activeId} note={ws.activeNote} />}
+      <LinksPanel
+        outgoing={ws.outgoing}
+        backlinks={ws.backlinks}
+        onNavigate={(title) => {
+          clearDiff()
+          ws.selectByTitle(title)
+        }}
+      />
+      <HistoryPanel
+        versions={ws.versions}
+        onCommit={() => ws.commit()}
+        onRevert={(id) => {
+          ws.revert(id)
+          clearDiff()
+        }}
+        onDiff={(id) => setDiff(ws.diffAgainstCurrent(id))}
       />
       {diff && <DiffView chunks={diff} />}
     </div>

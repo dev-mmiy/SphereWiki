@@ -1,11 +1,22 @@
-import { fireEvent, render, screen } from "@testing-library/react"
+import { fireEvent, render, screen, within } from "@testing-library/react"
 import { describe, expect, it } from "vitest"
 import { NoteWorkspace } from "./NoteWorkspace"
 
 describe("NoteWorkspace", () => {
-  it("mounts the CodeMirror editor at runtime", () => {
-    const { container } = render(<NoteWorkspace />)
-    expect(container.querySelector(".cm-editor")).not.toBeNull()
+  it("renders the note list, editor, and commit control", () => {
+    render(<NoteWorkspace />)
+    const nav = screen.getByRole("navigation")
+    expect(within(nav).getByRole("button", { name: "Home" })).toBeTruthy()
+    expect(within(nav).getByRole("button", { name: "Ideas" })).toBeTruthy()
+    expect(document.querySelector(".cm-editor")).not.toBeNull()
+    expect(screen.getByRole("button", { name: /commit version/i })).toBeTruthy()
+  })
+
+  it("switches the active note from the list", () => {
+    render(<NoteWorkspace />)
+    const nav = screen.getByRole("navigation")
+    fireEvent.click(within(nav).getByRole("button", { name: "Ideas" }))
+    expect(document.querySelector(".cm-editor")).not.toBeNull()
   })
 
   it("commits a version when the Commit button is clicked", () => {
