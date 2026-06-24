@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@codemirror/lang-markdown": "^6.5.0",
+    "@spherewiki/ai": "workspace:*",
     "@spherewiki/shared": "workspace:*",
     "codemirror": "^6.0.2",
     "react": "^19.2.7",

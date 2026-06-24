@@ -5,6 +5,7 @@
     "jsx": "react-jsx",
     "noEmit": true,
     "paths": {
+      "@spherewiki/ai": ["../../packages/ai/src/index.ts"],
       "@spherewiki/shared": ["../../packages/shared/src/index.ts"]
     }
   },

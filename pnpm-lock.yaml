@@ -35,6 +35,9 @@ importers:
       '@codemirror/lang-markdown':
         specifier: ^6.5.0
         version: 6.5.0
+      '@spherewiki/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
       '@spherewiki/shared':
         specifier: workspace:*
         version: link:../../packages/shared

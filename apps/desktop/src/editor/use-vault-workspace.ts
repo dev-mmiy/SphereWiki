@@ -1,4 +1,15 @@
 import {
+  createHeuristicSuggester,
+  createLocalEmbedder,
+  createMemoryVectorIndex,
+  type EmbeddingProvider,
+  type NoteContext,
+  type OnSaveResult,
+  runOnSaveAgent,
+  type SuggestionProvider,
+  type VectorIndex,
+} from "@spherewiki/ai"
+import {
   buildLinkGraph,
   createMemoryVault,
   createMemoryVersionStore,
@@ -8,14 +19,17 @@ import {
   type NoteId,
   type NoteMeta,
   openYjsNote,
+  type Session,
   textDiff,
   type Vault,
   type Version,
   type VersionStore,
+  type WorkspaceId,
   type YjsBackedNote,
   yjsEngine,
 } from "@spherewiki/shared"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { WORKSPACE_ID } from "../auth-dev"
 
 const LOCAL: EditOrigin = { actor: "local", kind: "human" }
 
@@ -42,6 +56,17 @@ export interface VaultWorkspace {
   commit: (label?: string) => void
   revert: (id: string) => void
   diffAgainstCurrent: (id: string) => DiffChunk[]
+  /** Run the on-save AI agent on the active note; AI edits land as attributed, revertible versions. */
+  aiOrganize: (session: Session) => Promise<OnSaveResult>
+  /** True while an AI run is in flight (so the UI can prevent concurrent runs). */
+  readonly aiBusy: boolean
+}
+
+export interface UseVaultWorkspaceOptions {
+  readonly workspaceId?: WorkspaceId
+  /** Inject AI providers (the real Claude/ONNX backends at M4b; deterministic stubs in tests). */
+  readonly suggester?: SuggestionProvider
+  readonly embedder?: EmbeddingProvider
 }
 
 /**
@@ -50,10 +75,29 @@ export interface VaultWorkspace {
  * the derived link graph. The active note is exposed only when it matches the
  * active id, so consumers never bind to a stale doc during a switch.
  */
-export function useVaultWorkspace(): VaultWorkspace {
+export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): VaultWorkspace {
+  const workspaceId = options.workspaceId ?? WORKSPACE_ID
   const vaultRef = useRef<Vault | null>(null)
   if (vaultRef.current === null) vaultRef.current = createMemoryVault(SEED)
   const vault = vaultRef.current
+
+  // Per-workspace AI: a deterministic local embedder + heuristic suggester + an isolated
+  // vector index sealed to this workspace. The real Claude/ONNX/pgvector backends slot in
+  // behind these same seams at M4b.
+  const aiRef = useRef<{
+    embedder: EmbeddingProvider
+    suggester: SuggestionProvider
+    index: VectorIndex
+  } | null>(null)
+  if (aiRef.current === null) {
+    const embedder = options.embedder ?? createLocalEmbedder()
+    aiRef.current = {
+      embedder,
+      suggester: options.suggester ?? createHeuristicSuggester(),
+      index: createMemoryVectorIndex(workspaceId, embedder.info),
+    }
+  }
+  const aiBusyRef = useRef(false)
 
   const storesRef = useRef(new Map<NoteId, VersionStore>())
   const storeFor = useCallback((id: NoteId): VersionStore => {
@@ -75,6 +119,7 @@ export function useVaultWorkspace(): VaultWorkspace {
   const [active, setActive] = useState<{ id: NoteId; note: YjsBackedNote } | null>(null)
   const [graph, setGraph] = useState<LinkGraph>(() => computeGraph(vault))
   const [versions, setVersions] = useState<readonly Version[]>([])
+  const [aiBusy, setAiBusy] = useState(false)
 
   useEffect(() => {
     const note = openYjsNote()
@@ -94,6 +139,9 @@ export function useVaultWorkspace(): VaultWorkspace {
   }, [activeId, vault, storeFor])
 
   const activeNote = active && active.id === activeId ? active.note : null
+  // Track the live active id so an in-flight AI run can tell if the user has switched away.
+  const activeIdRef = useRef(activeId)
+  activeIdRef.current = activeId
 
   const activeMeta = useMemo(() => notes.find((m) => m.id === activeId), [notes, activeId])
   const outgoing = useMemo<readonly string[]>(
@@ -147,6 +195,49 @@ export function useVaultWorkspace(): VaultWorkspace {
       past.destroy()
     }
   }
+  const aiOrganize = async (session: Session): Promise<OnSaveResult> => {
+    const ai = aiRef.current
+    if (activeNote === null || ai === null || aiBusyRef.current) {
+      return { links: [], tags: [], versionId: null, applied: false }
+    }
+    // Capture the target so a note switch during the (async) run can't redirect the write,
+    // and guard against concurrent runs.
+    const targetId = activeId
+    const note = activeNote
+    aiBusyRef.current = true
+    setAiBusy(true)
+    try {
+      const meta = vault.list().find((m) => m.id === targetId)
+      const others: NoteContext[] = vault
+        .list()
+        .filter((m) => m.id !== targetId)
+        .map((m) => ({ id: m.id, title: m.title, body: vault.read(m.id) }))
+      const result = await runOnSaveAgent(
+        {
+          session,
+          workspaceId,
+          noteId: targetId,
+          title: meta?.title ?? targetId,
+          note,
+          store: storeFor(targetId),
+          index: ai.index,
+          others,
+        },
+        { suggester: ai.suggester, embedder: ai.embedder },
+      )
+      // Persist directly to the vault: if the user switched notes mid-run, the note's own
+      // subscribe-writer was torn down, so don't depend on it — keep Markdown the source of
+      // truth, consistent with the committed AI version.
+      vault.write(targetId, note.getText())
+      setGraph(computeGraph(vault))
+      // Only refresh the history panel if this note is still the active one.
+      if (activeIdRef.current === targetId) setVersions(storeFor(targetId).list())
+      return result
+    } finally {
+      aiBusyRef.current = false
+      setAiBusy(false)
+    }
+  }
 
   return {
     notes,
@@ -161,5 +252,7 @@ export function useVaultWorkspace(): VaultWorkspace {
     commit,
     revert,
     diffAgainstCurrent,
+    aiOrganize,
+    aiBusy,
   }
 }

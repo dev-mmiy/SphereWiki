@@ -6,8 +6,9 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      // Resolve the workspace package to source so the loop needs no build ordering.
+      // Resolve the workspace packages to source so the loop needs no build ordering.
       "@spherewiki/shared": path.resolve(import.meta.dirname, "../../packages/shared/src/index.ts"),
+      "@spherewiki/ai": path.resolve(import.meta.dirname, "../../packages/ai/src/index.ts"),
     },
   },
 })

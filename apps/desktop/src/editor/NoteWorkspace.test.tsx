@@ -35,6 +35,25 @@ describe("NoteWorkspace", () => {
     ).toBe(false)
   })
 
+  it("offers Organize with AI for an editor and disables it for a viewer", () => {
+    const { unmount } = render(<NoteWorkspace auth={devAuth("editor")} />)
+    expect(
+      (screen.getByRole("button", { name: /organize with ai/i }) as HTMLButtonElement).disabled,
+    ).toBe(false)
+    unmount()
+    render(<NoteWorkspace auth={devAuth("viewer")} />)
+    expect(
+      (screen.getByRole("button", { name: /organize with ai/i }) as HTMLButtonElement).disabled,
+    ).toBe(true)
+  })
+
+  it("runs the agent, surfaces what it added, and attributes it in history", async () => {
+    render(<NoteWorkspace auth={devAuth("editor")} />)
+    fireEvent.click(screen.getByRole("button", { name: /organize with ai/i }))
+    expect(await screen.findByText(/AI added/)).toBeTruthy()
+    expect(screen.getByText(/ai:on-save/)).toBeTruthy() // the AI version, attributed in history
+  })
+
   it("is read-only for a viewer", () => {
     render(<NoteWorkspace auth={devAuth("viewer")} />)
     expect(document.querySelector(".cm-content")?.getAttribute("contenteditable")).toBe("false")
