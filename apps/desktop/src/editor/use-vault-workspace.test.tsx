@@ -2,6 +2,7 @@ import type { OnSaveResult, RagAnswer, SuggestionProvider } from "@spherewiki/ai
 import { act, renderHook } from "@testing-library/react"
 import { describe, expect, it } from "vitest"
 import { devAuth } from "../auth-dev"
+import type { ConnectNote } from "../sync/connect-server"
 import { useVaultWorkspace } from "./use-vault-workspace"
 
 const LOCAL = { actor: "local", kind: "human" } as const
@@ -150,5 +151,44 @@ describe("useVaultWorkspace", () => {
     })
     expect(ans?.citations).toHaveLength(0)
     expect(ans?.answer).toBe("")
+  })
+
+  it("seeds locally and connects no sync transport when no syncUrl is set (offline-first)", () => {
+    let connects = 0
+    const connect: ConnectNote = () => {
+      connects++
+      return () => {}
+    }
+    const { result } = renderHook(() => useVaultWorkspace({ connect }))
+    expect(connects).toBe(0) // server is an enhancement, never a hard dependency
+    expect(result.current.activeNote?.getText()).toContain("Welcome") // seeded from local vault
+  })
+
+  it("hydrates the active note from the super-peer, not the local seed, when syncing", () => {
+    const connect: ConnectNote = (note, opts) => {
+      // Simulate the server being authoritative for the room.
+      note.setText("# Server Home\n", LOCAL)
+      opts.onHydrated()
+      return () => {}
+    }
+    const { result } = renderHook(() => useVaultWorkspace({ syncUrl: "ws://x", connect }))
+    expect(result.current.activeNote?.getText()).toBe("# Server Home\n")
+    expect(result.current.activeNote?.getText()).not.toContain("Welcome")
+  })
+
+  it("never clobbers the vault when a synced room has not hydrated (offline / fast switch)", () => {
+    const connect: ConnectNote = () => () => {} // connects but never hydrates
+    const { result } = renderHook(() => useVaultWorkspace({ syncUrl: "ws://x", connect }))
+    const ideas = result.current.notes.find((m) => m.title === "Ideas")
+    act(() => {
+      if (ideas) result.current.select(ideas.id)
+    })
+    const home = result.current.notes.find((m) => m.title === "Home")
+    act(() => {
+      if (home) result.current.select(home.id)
+    })
+    // The un-hydrated cleanup must not have overwritten Home's Markdown with "" —
+    // its outgoing links (derived from the vault body) are still intact.
+    expect(result.current.outgoing).toEqual(expect.arrayContaining(["Getting Started", "Ideas"]))
   })
 })

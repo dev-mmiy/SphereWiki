@@ -37,6 +37,7 @@ import {
 } from "@spherewiki/shared"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { WORKSPACE_ID } from "../auth-dev"
+import { type ConnectNote, connectNoteToServer } from "../sync/connect-server"
 
 const LOCAL: EditOrigin = { actor: "local", kind: "human" }
 
@@ -76,6 +77,10 @@ export interface UseVaultWorkspaceOptions {
   /** Inject AI providers (the real Claude/ONNX backends at M4b; deterministic stubs in tests). */
   readonly suggester?: SuggestionProvider
   readonly embedder?: EmbeddingProvider
+  /** When set, the active note syncs live through the super-peer at this WebSocket URL. */
+  readonly syncUrl?: string
+  /** Inject the sync transport (the real super-peer in the app; a fake in tests). */
+  readonly connect?: ConnectNote
 }
 
 /**
@@ -86,6 +91,7 @@ export interface UseVaultWorkspaceOptions {
  */
 export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): VaultWorkspace {
   const workspaceId = options.workspaceId ?? WORKSPACE_ID
+  const syncUrl = options.syncUrl
   const vaultRef = useRef<Vault | null>(null)
   if (vaultRef.current === null) vaultRef.current = createMemoryVault(SEED)
   const vault = vaultRef.current
@@ -142,20 +148,44 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
 
   useEffect(() => {
     const note = openYjsNote()
-    note.setText(vault.read(activeId), LOCAL)
-    const off = note.subscribe(() => {
+    const persist = (): void => {
       vault.write(activeId, note.getText())
       setGraph(computeGraph(vault))
+    }
+    // When syncing, the super-peer is authoritative for this room: hydrate from it
+    // rather than the local seed (seeding both sides would merge into garbled text).
+    // Until hydration completes, the doc is empty — never write that back to the
+    // vault (that would clobber the Markdown source of truth, e.g. offline or on a
+    // fast note switch). Offline/no-sync mode is "hydrated" from the local seed at once.
+    let hydrated = false
+    const connect = options.connect ?? connectNoteToServer
+    const disconnect = syncUrl
+      ? connect(note, {
+          url: syncUrl,
+          room: `${workspaceId}/${activeId}`,
+          onHydrated: () => {
+            hydrated = true
+            persist()
+          },
+        })
+      : null
+    if (disconnect === null) {
+      note.setText(vault.read(activeId), LOCAL)
+      hydrated = true
+    }
+    const off = note.subscribe(() => {
+      if (hydrated) persist()
     })
     setActive({ id: activeId, note })
     setVersions(storeFor(activeId).list())
     setGraph(computeGraph(vault))
     return () => {
       off()
-      vault.write(activeId, note.getText())
+      if (hydrated) vault.write(activeId, note.getText())
+      disconnect?.()
       note.destroy()
     }
-  }, [activeId, vault, storeFor])
+  }, [activeId, vault, storeFor, syncUrl, workspaceId, options.connect])
 
   const activeNote = active && active.id === activeId ? active.note : null
   // Track the live active id so an in-flight AI run can tell if the user has switched away.

@@ -27,7 +27,8 @@ function describeResult(r: OnSaveResult): string {
 }
 
 export function NoteWorkspace({ auth = devAuth() }: { auth?: AuthProvider }) {
-  const ws = useVaultWorkspace()
+  // Opt-in live sync: set VITE_SYNC_URL (e.g. ws://127.0.0.1:8787) to sync via the super-peer.
+  const ws = useVaultWorkspace({ syncUrl: import.meta.env.VITE_SYNC_URL })
   const [diff, setDiff] = useState<readonly DiffChunk[] | null>(null)
   const [aiStatus, setAiStatus] = useState<string | null>(null)
   const clearDiff = () => setDiff(null)

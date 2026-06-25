@@ -40,4 +40,11 @@ describe("createFilePersistence", () => {
     expect([...(p.load("ws/note-1") ?? [])]).toEqual([1])
     expect([...(p.load("ws/note-2") ?? [])]).toEqual([2])
   })
+
+  it("handles very long room names (beyond the filesystem name limit)", () => {
+    const p = createFilePersistence(dir)
+    const room = `ws/${"x".repeat(500)}`
+    p.save(room, new Uint8Array([42]))
+    expect([...(p.load(room) ?? [])]).toEqual([42])
+  })
 })

@@ -6,6 +6,8 @@ export interface SyncServerOptions {
   port?: number
   /** Durable backing store for room state; defaults to in-memory. */
   persistence?: SyncPersistence
+  /** Debounce (ms) before onStoreDocument persists; lower it in tests for prompt saves. */
+  debounce?: number
 }
 
 /**
@@ -19,9 +21,16 @@ export function createSyncServer(options: SyncServerOptions = {}): Server {
   return new Server({
     port: options.port ?? 1234,
     quiet: true,
+    ...(options.debounce !== undefined ? { debounce: options.debounce } : {}),
     onLoadDocument: async ({ documentName, document }) => {
       const saved = persistence.load(documentName)
-      if (saved) Y.applyUpdate(document, saved)
+      if (saved) {
+        try {
+          Y.applyUpdate(document, saved)
+        } catch {
+          // Corrupt/foreign persisted state — start the room fresh rather than crash.
+        }
+      }
       return document
     },
     onStoreDocument: async ({ documentName, document }) => {
