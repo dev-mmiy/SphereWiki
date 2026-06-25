@@ -77,6 +77,14 @@ export function NoteWorkspace({ auth = devAuth() }: { auth?: AuthProvider }) {
           setAiStatus(null)
           ws.remove(id)
         }}
+        onRename={(id) => {
+          const current = ws.notes.find((m) => m.id === id)?.title ?? ""
+          const next = window.prompt("Rename note", current)
+          if (next === null || next.trim() === "") return
+          clearDiff()
+          setAiStatus(null)
+          ws.rename(id, next)
+        }}
         onRestore={(id) => ws.restore(id)}
       />
       {ws.activeNote && <NoteEditor key={ws.activeId} note={ws.activeNote} editable={canWrite} />}

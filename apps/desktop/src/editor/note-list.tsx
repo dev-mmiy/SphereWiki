@@ -8,6 +8,7 @@ export function NoteList({
   canCreate = true,
   deleted = [],
   onDelete,
+  onRename,
   onRestore,
   canEdit = true,
 }: {
@@ -20,6 +21,8 @@ export function NoteList({
   deleted?: readonly NoteMeta[]
   /** Soft-delete a note (revertible). Omitted/disabled when the user can't write. */
   onDelete?: (id: NoteId) => void
+  /** Rename a note (repoints its backlinks). Omitted/disabled when the user can't write. */
+  onRename?: (id: NoteId) => void
   /** Restore a soft-deleted note. */
   onRestore?: (id: NoteId) => void
   canEdit?: boolean
@@ -35,6 +38,16 @@ export function NoteList({
             <button type="button" aria-current={m.id === activeId} onClick={() => onSelect(m.id)}>
               {m.title}
             </button>
+            {onRename && (
+              <button
+                type="button"
+                aria-label={`Rename ${m.title}`}
+                disabled={!canEdit}
+                onClick={() => onRename(m.id)}
+              >
+                ✎
+              </button>
+            )}
             {onDelete && (
               <button
                 type="button"

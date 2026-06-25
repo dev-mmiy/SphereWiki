@@ -95,6 +95,19 @@ describe("createLocalStorageVault", () => {
     expect(reloaded.list().map((m) => m.id)).toEqual(["u1", "u2"])
   })
 
+  it("renames a title in place and persists it across reload", () => {
+    const storage = memStorage()
+    const vault = createLocalStorageVault(SEED, { key: "k", storage })
+    const home = vault.list()[0]
+    if (home === undefined) throw new Error("seed failed")
+    vault.rename(home.id, "Index")
+    expect(vault.list().map((m) => m.title)).toEqual(["Index", "Ideas"])
+
+    const reloaded = createLocalStorageVault(SEED, { key: "k", storage })
+    expect(reloaded.list().map((m) => m.title)).toEqual(["Index", "Ideas"]) // survived reload
+    expect(reloaded.read(home.id)).toBe("# Home\n") // body untouched by the rename
+  })
+
   it("ensure inserts a note at an explicit id if absent", () => {
     const vault = createLocalStorageVault(SEED, { key: "k", storage: memStorage() })
     const meta = vault.ensure(asNoteId("remote-1"), "Remote", "# Remote\n")

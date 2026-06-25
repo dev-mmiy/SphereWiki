@@ -35,6 +35,12 @@ export function createMemoryVault(
     return meta
   }
 
+  const rename = (id: NoteId, title: string): void => {
+    const note = notes.get(id)
+    if (note === undefined) return // no-op on unknown id: a rename targets an existing note
+    notes.set(id, { meta: { id, title }, body: note.body }) // title only; body untouched
+  }
+
   for (const entry of seed) create(entry.title, entry.body)
 
   return {
@@ -45,6 +51,7 @@ export function createMemoryVault(
       notes.set(id, { meta: note.meta, body })
     },
     create,
+    rename,
     ensure,
   }
 }

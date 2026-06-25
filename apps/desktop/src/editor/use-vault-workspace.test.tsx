@@ -554,6 +554,154 @@ describe("useVaultWorkspace", () => {
     expect(result.current.notes.some((m) => m.id === activeId)).toBe(true)
   })
 
+  it("renames a note and repoints its backlinks (link integrity, no dangling links)", () => {
+    const { result } = renderHook(() => useVaultWorkspace())
+    // Home is active and links to [[Ideas]]; rename Ideas → Concepts.
+    const ideas = result.current.notes.find((m) => m.title === "Ideas")
+    if (ideas === undefined) throw new Error("expected Ideas")
+    act(() => result.current.rename(ideas.id, "Concepts"))
+
+    // The list label changed; no "Ideas" remains.
+    expect(result.current.notes.map((m) => m.title)).toContain("Concepts")
+    expect(result.current.notes.map((m) => m.title)).not.toContain("Ideas")
+    // The active note (Home) was repointed live: it links to Concepts, not the dangling Ideas.
+    expect(result.current.activeNote?.getText()).toContain("[[Concepts]]")
+    expect(result.current.activeNote?.getText()).not.toContain("[[Ideas]]")
+    expect(result.current.outgoing).toContain("Concepts")
+    expect(result.current.outgoing).not.toContain("Ideas")
+
+    // The renamed note's backlinks still resolve under the new title.
+    act(() => result.current.select(ideas.id))
+    expect(result.current.backlinks.map((m) => m.title)).toContain("Home")
+  })
+
+  it("repoints backlinks in ALL non-active notes that reference the renamed note", () => {
+    const { result } = renderHook(() => useVaultWorkspace())
+    // Both "Getting Started" and "Ideas" link to [[Home]]; rename Home while neither is active.
+    const home = result.current.activeId
+    act(() => result.current.rename(home, "Index"))
+    for (const title of ["Getting Started", "Ideas"]) {
+      const m = result.current.notes.find((x) => x.title === title)
+      act(() => {
+        if (m) result.current.select(m.id)
+      })
+      expect(result.current.activeNote?.getText()).toContain("[[Index]]")
+      expect(result.current.activeNote?.getText()).not.toContain("[[Home]]")
+    }
+  })
+
+  it("preserves alias and anchor when repointing backlinks", () => {
+    const { result } = renderHook(() => useVaultWorkspace())
+    act(() =>
+      result.current.activeNote?.setText(
+        "# Home\n\n[[Ideas|brainstorm]] and [[Ideas#top]]\n",
+        LOCAL,
+      ),
+    )
+    const ideas = result.current.notes.find((m) => m.title === "Ideas")
+    if (ideas === undefined) throw new Error("expected Ideas")
+    act(() => result.current.rename(ideas.id, "Concepts"))
+    expect(result.current.activeNote?.getText()).toContain("[[Concepts|brainstorm]]")
+    expect(result.current.activeNote?.getText()).toContain("[[Concepts#top]]")
+  })
+
+  it("makes the active note's body link-rewrite revertible (it rode the CRDT doc)", () => {
+    const { result } = renderHook(() => useVaultWorkspace())
+    act(() => result.current.commit("before rename"))
+    const vid = result.current.versions[0]?.id
+    const ideas = result.current.notes.find((m) => m.title === "Ideas")
+    if (ideas === undefined) throw new Error("expected Ideas")
+    act(() => result.current.rename(ideas.id, "Concepts"))
+    expect(result.current.activeNote?.getText()).toContain("[[Concepts]]")
+    // Revert the active note's body to before the rename → the old link text returns.
+    // (The title is a separate registry-level edit, reversed by renaming back — not body history.)
+    act(() => {
+      if (vid) result.current.revert(vid)
+    })
+    expect(result.current.activeNote?.getText()).toContain("[[Ideas]]")
+  })
+
+  it("refuses to rename to a title already used by another visible note (no ambiguous links)", () => {
+    const { result } = renderHook(() => useVaultWorkspace())
+    const ideas = result.current.notes.find((m) => m.title === "Ideas")
+    if (ideas === undefined) throw new Error("expected Ideas")
+    act(() => result.current.rename(ideas.id, "Home")) // Home already exists → must no-op
+    expect(result.current.notes.filter((m) => m.title === "Home")).toHaveLength(1)
+    expect(result.current.notes.some((m) => m.title === "Ideas")).toBe(true)
+  })
+
+  it("converges a rename's title across peers (registry last-writer-wins)", () => {
+    const hub = registryHub()
+    const a = renderHook(() =>
+      useVaultWorkspace({
+        syncUrl: "ws://x",
+        connect: noBodySync,
+        connectRegistry: hub.connect,
+        newNoteId: ids("a"),
+      }),
+    )
+    const b = renderHook(() =>
+      useVaultWorkspace({
+        syncUrl: "ws://x",
+        connect: noBodySync,
+        connectRegistry: hub.connect,
+        newNoteId: ids("b"),
+      }),
+    )
+    act(() => a.result.current.create("Draft"))
+    const draft = a.result.current.notes.find((m) => m.title === "Draft")
+    if (draft === undefined) throw new Error("expected Draft")
+    act(() => a.result.current.rename(draft.id, "Spec"))
+    // Peer B sees the renamed title — the note list title converges.
+    expect(b.result.current.notes.find((m) => m.id === draft.id)?.title).toBe("Spec")
+    a.unmount()
+    b.unmount()
+    hub.server.destroy()
+  })
+
+  it("keeps the vault's own title metadata in step after rename (no drift)", () => {
+    const { result } = renderHook(() => useVaultWorkspace())
+    const ideas = result.current.notes.find((m) => m.title === "Ideas")
+    if (ideas === undefined) throw new Error("expected Ideas")
+    // Rename twice: a stale vault title would feed the wrong oldTitle to the 2nd rename and dangle.
+    act(() => result.current.rename(ideas.id, "Concepts"))
+    act(() => result.current.rename(ideas.id, "Themes"))
+    expect(result.current.notes.find((m) => m.id === ideas.id)?.title).toBe("Themes")
+    // Home (active) links to the renamed note: after two renames it points at the final title only.
+    expect(result.current.activeNote?.getText()).toContain("[[Themes]]")
+    expect(result.current.activeNote?.getText()).not.toContain("[[Concepts]]")
+    expect(result.current.activeNote?.getText()).not.toContain("[[Ideas]]")
+  })
+
+  it("is a no-op for a blank or unchanged title", () => {
+    const { result } = renderHook(() => useVaultWorkspace())
+    const before = result.current.notes.map((m) => m.title)
+    const ideas = result.current.notes.find((m) => m.title === "Ideas")
+    if (ideas === undefined) throw new Error("expected Ideas")
+    act(() => result.current.rename(ideas.id, "   "))
+    act(() => result.current.rename(ideas.id, "Ideas"))
+    expect(result.current.notes.map((m) => m.title)).toEqual(before)
+    expect(result.current.activeNote?.getText()).toContain("[[Ideas]]")
+  })
+
+  it("propagates a rename to the shared registry (peers converge on the new title)", () => {
+    const hub = registryHub()
+    const { result } = renderHook(() =>
+      useVaultWorkspace({
+        syncUrl: "ws://x",
+        connect: noBodySync,
+        connectRegistry: hub.connect,
+        newNoteId: ids("a"),
+      }),
+    )
+    act(() => result.current.create("Draft"))
+    const draft = result.current.notes.find((m) => m.title === "Draft")
+    if (draft === undefined) throw new Error("expected Draft")
+    act(() => result.current.rename(draft.id, "Spec"))
+    expect(hub.server.get(draft.id)?.title).toBe("Spec") // a peer would see the new title
+    hub.server.destroy()
+  })
+
   it("hides a note when a peer tombstones it, then restores it (no data loss)", () => {
     const hub = registryHub()
     const { result } = renderHook(() =>

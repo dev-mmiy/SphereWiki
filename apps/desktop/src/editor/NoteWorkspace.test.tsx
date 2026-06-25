@@ -1,7 +1,11 @@
 import { fireEvent, render, screen, within } from "@testing-library/react"
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { devAuth } from "../auth-dev"
 import { NoteWorkspace } from "./NoteWorkspace"
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
 
 describe("NoteWorkspace", () => {
   it("renders the note list, editor, and commit control", () => {
@@ -73,6 +77,35 @@ describe("NoteWorkspace", () => {
     // Restorable from the trash.
     fireEvent.click(within(nav).getByRole("button", { name: "Restore Ideas" }))
     expect(within(nav).getByRole("button", { name: "Ideas" })).toBeTruthy()
+  })
+
+  it("renames the active note from the list (prompt → relabel)", () => {
+    vi.spyOn(window, "prompt").mockReturnValue("Index")
+    render(<NoteWorkspace auth={devAuth("editor")} />)
+    const nav = screen.getByRole("navigation")
+    expect(within(nav).getByRole("button", { name: "Home" })).toBeTruthy()
+    fireEvent.click(within(nav).getByRole("button", { name: "Rename Home" }))
+    expect(within(nav).getByRole("button", { name: "Index" })).toBeTruthy()
+    expect(within(nav).queryByRole("button", { name: "Home" })).toBeNull()
+  })
+
+  it("does not rename when the prompt is cancelled", () => {
+    vi.spyOn(window, "prompt").mockReturnValue(null)
+    render(<NoteWorkspace auth={devAuth("editor")} />)
+    const nav = screen.getByRole("navigation")
+    fireEvent.click(within(nav).getByRole("button", { name: "Rename Ideas" }))
+    expect(within(nav).getByRole("button", { name: "Ideas" })).toBeTruthy()
+  })
+
+  it("disables rename for a viewer and blocks the action", () => {
+    vi.spyOn(window, "prompt").mockReturnValue("Hacked")
+    render(<NoteWorkspace auth={devAuth("viewer")} />)
+    const nav = screen.getByRole("navigation")
+    const btn = within(nav).getByRole("button", { name: "Rename Ideas" }) as HTMLButtonElement
+    expect(btn.disabled).toBe(true)
+    fireEvent.click(btn) // a disabled button must not fire onClick → no rename happens
+    expect(within(nav).getByRole("button", { name: "Ideas" })).toBeTruthy()
+    expect(within(nav).queryByRole("button", { name: "Hacked" })).toBeNull()
   })
 
   it("disables delete for a viewer", () => {

@@ -156,6 +156,12 @@ export function createLocalStorageVault(
       persist()
     },
     create,
+    rename: (id, title) => {
+      const note = notes.get(id)
+      if (note === undefined) return // no-op on unknown id: a rename targets an existing note
+      notes.set(id, { meta: { id, title }, body: note.body }) // title only; body untouched
+      persist()
+    },
     ensure,
   }
 }

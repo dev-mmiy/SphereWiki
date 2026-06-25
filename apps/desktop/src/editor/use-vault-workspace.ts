@@ -28,6 +28,8 @@ import {
   openYjsNote,
   openYjsRegistry,
   parseNote,
+  type RegistryEntry,
+  renameWikiLinkTargets,
   type Session,
   textDiff,
   type Vault,
@@ -73,6 +75,15 @@ export interface VaultWorkspace {
   select: (id: NoteId) => void
   selectByTitle: (title: string) => void
   create: (title: string) => void
+  /**
+   * Rename a note: update its display title (the registry is the title authority and converges
+   * to peers via last-writer-wins) and atomically repoint every `[[old title]]` backlink across
+   * the vault, so no dangling link is left behind. The open note's body change rides the CRDT
+   * doc, so it syncs and is revertible like any body edit. No-op on a blank, unchanged, or
+   * already-taken (by another visible note) title. The title itself is reversed by renaming back
+   * — it is a registry-level edit, not part of per-note body history (like delete/restore).
+   */
+  rename: (id: NoteId, title: string) => void
   /** Soft-delete a note: hidden from the list across peers, body retained, revertible. */
   remove: (id: NoteId) => void
   /** Restore a soft-deleted note. */
@@ -419,6 +430,54 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     },
     [vault, registry, unionList],
   )
+  // Rename: change the display title AND atomically repoint every `[[old title]]` backlink across
+  // the vault, so no dangling link is left behind (link integrity). The OPEN note's body change
+  // rides the CRDT doc (synced, attributed, revertible like any edit); other notes are rewritten in
+  // the vault, and the vault's own title metadata is kept in step. No-op on a blank, unchanged, or
+  // already-taken (by another visible note) title.
+  //
+  // Bounds — fully correct local-first/single-writer; deferred edges are non-destructive: the title
+  // is a registry-level edit reversible by renaming back (not part of per-note body history, like
+  // delete/restore); and in sync mode a NON-OPEN note's body rewrite stays local until that room is
+  // reopened, pending the multi-doc sync (S4c) that also governs concurrent same-note renames.
+  const rename = (id: NoteId, rawTitle: string): void => {
+    const newTitle = rawTitle.trim()
+    if (newTitle === "") return
+    const current = registry.get(id)
+    const oldTitle = current?.title ?? vault.list().find((m) => m.id === id)?.title
+    if (oldTitle === undefined || oldTitle === newTitle) return
+    // Refuse a title already used by another visible note: wikilinks resolve by title, so a
+    // duplicate makes `[[title]]` ambiguous — protect link integrity rather than corrupt it.
+    // (Reusing a trashed note's title is fine — it's hidden.)
+    if (unionList().some((m) => m.id !== id && m.title === newTitle)) return
+
+    // Non-active notes: rewrite their Markdown directly in the vault. The active id is ALWAYS
+    // handled via its doc below (never vault.write it — a doc still hydrating from the server
+    // would clobber that write on sync), so skip it here unconditionally.
+    for (const m of vault.list()) {
+      if (m.id === activeId) continue
+      const body = vault.read(m.id)
+      const next = renameWikiLinkTargets(body, oldTitle, newTitle)
+      if (next !== body) vault.write(m.id, next)
+    }
+    // The open note: rewrite through the CRDT doc so the edit is attributed, synced, and revertible.
+    if (activeNote !== null) {
+      const body = activeNote.getText()
+      const next = renameWikiLinkTargets(body, oldTitle, newTitle)
+      if (next !== body) activeNote.setText(next, LOCAL)
+    }
+
+    // Keep the vault's title metadata in step (the registry is the canonical title authority, but a
+    // drifting vault title would feed a stale `oldTitle` to a later rename and stale names to the AI).
+    vault.rename(id, newTitle)
+    // Update the display title (last-writer-wins per id → converges to peers). Preserve a tombstone.
+    const entry: RegistryEntry = current?.deleted
+      ? { title: newTitle, deleted: true }
+      : { title: newTitle }
+    registry.set(id, entry, LOCAL)
+    setNotes(unionList())
+    setGraph(computeGraph(vault))
+  }
   // Delete = a revertible registry tombstone: it hides the note from the list across peers but
   // never erases its Markdown body (kept in the vault), so it can be restored and no human work
   // is silently destroyed. The reconcile fired by this set updates the list and, if this was the
@@ -525,6 +584,7 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     select,
     selectByTitle,
     create,
+    rename,
     remove,
     restore,
     commit,

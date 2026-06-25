@@ -16,6 +16,14 @@ export interface Vault {
   write(id: NoteId, body: string): void
   create(title: string, body?: string): NoteMeta
   /**
+   * Update an existing note's display title in place (its body is untouched); no-op if the id is
+   * unknown. The note's `[[wikilink]]` backlinks are repointed by the caller — a rename is more
+   * than a metadata change — this only keeps the vault's own title metadata in step with the
+   * note's canonical name, so derived views and a future file-backed vault (which renames the
+   * underlying `.md`) stay consistent.
+   */
+  rename(id: NoteId, title: string): void
+  /**
    * Insert a note at an explicit id if absent, else return the existing meta unchanged.
    * Idempotent and non-destructive — it never overwrites an existing note's body. Used to
    * materialize a note the synced registry knows about but this replica hasn't stored yet,

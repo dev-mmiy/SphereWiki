@@ -33,6 +33,21 @@ describe("memory vault", () => {
     expect(() => vault.read(asNoteId("nope"))).toThrow(/unknown note/)
   })
 
+  it("renames a note's title in place, leaving the body untouched", () => {
+    const vault = createMemoryVault([{ title: "Alpha", body: "# Alpha\n" }])
+    const [alpha] = vault.list()
+    if (alpha === undefined) throw new Error("expected note")
+    vault.rename(alpha.id, "Beta")
+    expect(vault.list().map((m) => m.title)).toEqual(["Beta"])
+    expect(vault.read(alpha.id)).toBe("# Alpha\n") // body is not the title's concern
+  })
+
+  it("rename is a no-op for an unknown id (does not throw or insert)", () => {
+    const vault = createMemoryVault([{ title: "Alpha", body: "a" }])
+    expect(() => vault.rename(asNoteId("nope"), "X")).not.toThrow()
+    expect(vault.list().map((m) => m.title)).toEqual(["Alpha"])
+  })
+
   it("ensure inserts at an explicit id if absent, else returns the existing meta unchanged", () => {
     const vault = createMemoryVault([{ title: "Home", body: "# Home\n" }])
     const [home] = vault.list()
