@@ -58,6 +58,17 @@ describe("NoteWorkspace", () => {
     expect(screen.getByText(/ai:on-save/)).toBeTruthy() // the AI version, attributed in history
   })
 
+  it("shows an empty-tags hint, then surfaces AI-added tags in the Tags panel", async () => {
+    render(<NoteWorkspace auth={devAuth("editor")} />)
+    const tagsRegion = screen.getByRole("region", { name: "Tags" })
+    expect(within(tagsRegion).getByText(/no tags yet/i)).toBeTruthy() // seed Home has no tags
+    fireEvent.click(screen.getByRole("button", { name: /organize with ai/i }))
+    await screen.findByText(/AI added/)
+    // The agent's auto-tags are now visible as #tag chips — the auto-tag value is observable.
+    const chips = await within(tagsRegion).findAllByRole("button", { name: /^#/ })
+    expect(chips.length).toBeGreaterThan(0)
+  })
+
   it("answers a workspace question with cited notes (RAG)", async () => {
     render(<NoteWorkspace auth={devAuth("editor")} />)
     fireEvent.change(screen.getByLabelText(/ask the workspace/i), {

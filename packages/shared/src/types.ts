@@ -41,3 +41,11 @@ export interface LinkGraph {
   /** wikilink target -> set of note ids that reference it (backlinks) */
   readonly backlinks: ReadonlyMap<string, ReadonlySet<string>>
 }
+
+/** Derived tag index for a set of notes. Tags live in frontmatter; rebuildable from Markdown alone. */
+export interface TagIndex {
+  /** tag -> set of note ids that carry it */
+  readonly byTag: ReadonlyMap<string, ReadonlySet<string>>
+  /** note id -> its tags, in document order */
+  readonly byNote: ReadonlyMap<string, readonly string[]>
+}

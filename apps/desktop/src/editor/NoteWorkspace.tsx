@@ -10,6 +10,7 @@ import { DiffView, HistoryPanel } from "./history-panel"
 import { LinksPanel } from "./links-panel"
 import { NoteEditor } from "./NoteEditor"
 import { NoteList } from "./note-list"
+import { TagsPanel } from "./tags-panel"
 import { useVaultWorkspace } from "./use-vault-workspace"
 
 /** One-line summary of an agent run for the status area. */
@@ -101,6 +102,17 @@ export function NoteWorkspace({ auth = devAuth() }: { auth?: AuthProvider }) {
           clearDiff()
           setAiStatus(null)
           ws.selectByTitle(title)
+        }}
+      />
+      <TagsPanel
+        key={ws.activeId}
+        tags={ws.tags}
+        activeId={ws.activeId}
+        notesForTag={ws.notesForTag}
+        onNavigate={(id) => {
+          clearDiff()
+          setAiStatus(null)
+          ws.select(id)
         }}
       />
       <HistoryPanel

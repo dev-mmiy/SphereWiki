@@ -72,6 +72,53 @@ describe("useVaultWorkspace", () => {
     ])
   })
 
+  it("exposes the active note's tags from its frontmatter", () => {
+    const { result } = renderHook(() => useVaultWorkspace())
+    expect(result.current.tags).toEqual([]) // seed Home has no frontmatter
+    act(() =>
+      result.current.activeNote?.setText(
+        "---\ntags:\n  - planning\n  - ideas\n---\n# Home\n",
+        LOCAL,
+      ),
+    )
+    expect(result.current.tags).toEqual(["planning", "ideas"])
+  })
+
+  it("surfaces AI-added tags (auto-tag becomes visible)", async () => {
+    const { result } = renderHook(() => useVaultWorkspace())
+    const session = devAuth("editor").session()
+    if (session === null) throw new Error("expected a session")
+    expect(result.current.tags).toEqual([])
+    await act(async () => {
+      await result.current.aiOrganize(session)
+    })
+    expect(result.current.tags.length).toBeGreaterThan(0) // the agent's tags now show in the UI
+  })
+
+  it("groups visible notes by tag for navigation (notesForTag)", () => {
+    const { result } = renderHook(() => useVaultWorkspace())
+    act(() => result.current.activeNote?.setText("---\ntags:\n  - shared\n---\n# Home\n", LOCAL))
+    const ideas = result.current.notes.find((m) => m.title === "Ideas")
+    act(() => {
+      if (ideas) result.current.select(ideas.id)
+    })
+    act(() => result.current.activeNote?.setText("---\ntags:\n  - shared\n---\n# Ideas\n", LOCAL))
+    expect(
+      result.current
+        .notesForTag("shared")
+        .map((m) => m.title)
+        .sort(),
+    ).toEqual(["Home", "Ideas"])
+    expect(result.current.notesForTag("nonexistent")).toEqual([])
+
+    // A trashed note must not surface in tag navigation (visible-notes-only, isolation).
+    const ideasId = result.current.notes.find((m) => m.title === "Ideas")?.id
+    act(() => {
+      if (ideasId) result.current.remove(ideasId)
+    })
+    expect(result.current.notesForTag("shared").map((m) => m.title)).toEqual(["Home"])
+  })
+
   it("switches notes and writes edits back to the vault", () => {
     const { result } = renderHook(() => useVaultWorkspace())
     const ideas = result.current.notes.find((m) => m.title === "Ideas")

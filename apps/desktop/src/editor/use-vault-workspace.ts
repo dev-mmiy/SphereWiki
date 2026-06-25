@@ -18,6 +18,7 @@ import {
 import {
   asNoteId,
   buildLinkGraph,
+  buildTagIndex,
   createMemoryVault,
   createMemoryVersionStore,
   type DiffChunk,
@@ -31,6 +32,7 @@ import {
   type RegistryEntry,
   renameWikiLinkTargets,
   type Session,
+  type TagIndex,
   textDiff,
   type Vault,
   type Version,
@@ -63,12 +65,20 @@ function computeGraph(vault: Vault): LinkGraph {
   return buildLinkGraph(vault.list().map((m) => ({ id: m.id, body: vault.read(m.id) })))
 }
 
+function computeTags(vault: Vault): TagIndex {
+  return buildTagIndex(vault.list().map((m) => ({ id: m.id, body: vault.read(m.id) })))
+}
+
 export interface VaultWorkspace {
   readonly notes: readonly NoteMeta[]
   readonly activeId: NoteId
   readonly activeNote: YjsBackedNote | null
   readonly outgoing: readonly string[]
   readonly backlinks: readonly NoteMeta[]
+  /** The active note's tags, read from its frontmatter (derived from Markdown). */
+  readonly tags: readonly string[]
+  /** Visible notes carrying a given tag — for tag-based navigation (workspace-scoped). */
+  notesForTag: (tag: string) => readonly NoteMeta[]
   readonly versions: readonly Version[]
   /** Tombstoned notes still recoverable locally (the "trash"). */
   readonly deleted: readonly NoteMeta[]
@@ -208,6 +218,9 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
   })
   const [active, setActive] = useState<{ id: NoteId; note: YjsBackedNote } | null>(null)
   const [graph, setGraph] = useState<LinkGraph>(() => computeGraph(vault))
+  // The tag index mirrors `graph`: both are derived from the vault's Markdown and recomputed
+  // imperatively in lockstep on every body change (a memo can't observe non-state body edits).
+  const [tagIndex, setTagIndex] = useState<TagIndex>(() => computeTags(vault))
   const [versions, setVersions] = useState<readonly Version[]>([])
   const [aiBusy, setAiBusy] = useState(false)
   const [deleted, setDeleted] = useState<readonly NoteMeta[]>([])
@@ -262,6 +275,7 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
       setNotes(visible)
       setDeleted(deletedList())
       setGraph(computeGraph(vault))
+      setTagIndex(computeTags(vault))
       // If the active note was just deleted (here or by a peer), move to the first visible note.
       // Its body was persisted on the body effect's cleanup, so nothing is lost and it restores.
       if (visible.length > 0 && !visible.some((m) => m.id === activeIdRef.current)) {
@@ -325,6 +339,7 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
       if (!writableToVault()) return
       vault.write(activeId, note.getText())
       setGraph(computeGraph(vault))
+      setTagIndex(computeTags(vault))
     }
     // "Hydrated" means edits may flow back to the vault. It flips once the authoritative
     // state has arrived (local cache loaded or server synced) — even if that state is empty,
@@ -373,6 +388,7 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     setActive({ id: activeId, note })
     setVersions(storeFor(activeId).list())
     setGraph(computeGraph(vault))
+    setTagIndex(computeTags(vault))
     return () => {
       disposed = true
       off()
@@ -401,6 +417,20 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     const ids = graph.backlinks.get(activeMeta.title) ?? new Set<string>()
     return notes.filter((m) => ids.has(m.id))
   }, [graph, activeMeta, notes])
+
+  // The active note's tags (from its frontmatter), and the visible notes carrying a given tag —
+  // both derived from the workspace's own Markdown, so tag navigation can never cross workspaces.
+  const tags = useMemo<readonly string[]>(
+    () => tagIndex.byNote.get(activeId) ?? [],
+    [tagIndex, activeId],
+  )
+  const notesForTag = useCallback(
+    (tag: string): NoteMeta[] => {
+      const ids = tagIndex.byTag.get(tag)
+      return ids === undefined ? [] : notes.filter((m) => ids.has(m.id))
+    },
+    [tagIndex, notes],
+  )
 
   const select = useCallback(
     (id: NoteId): void => {
@@ -477,6 +507,7 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     registry.set(id, entry, LOCAL)
     setNotes(unionList())
     setGraph(computeGraph(vault))
+    setTagIndex(computeTags(vault))
   }
   // Delete = a revertible registry tombstone: it hides the note from the list across peers but
   // never erases its Markdown body (kept in the vault), so it can be restored and no human work
@@ -556,6 +587,7 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
       // truth, consistent with the committed AI version.
       vault.write(targetId, note.getText())
       setGraph(computeGraph(vault))
+      setTagIndex(computeTags(vault))
       // Only refresh the history panel if this note is still the active one.
       if (activeIdRef.current === targetId) setVersions(storeFor(targetId).list())
       return result
@@ -579,6 +611,8 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     activeNote,
     outgoing,
     backlinks,
+    tags,
+    notesForTag,
     versions,
     deleted,
     select,
