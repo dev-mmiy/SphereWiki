@@ -16,7 +16,7 @@
     "build": "pnpm -r build",
     "reindex": "node scripts/reindex.mjs",
     "dev": "pnpm --filter @spherewiki/desktop dev",
-    "dev:server": "echo \"[dev:server] sync server arrives in M3 — see docs/ROADMAP.md\""
+    "dev:server": "pnpm --filter \"@spherewiki/server...\" build && pnpm --filter @spherewiki/server start"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.0",

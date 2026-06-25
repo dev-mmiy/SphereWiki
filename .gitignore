@@ -8,6 +8,9 @@ dist/
 # tauri (lands in M2)
 apps/desktop/src-tauri/target/
 
+# sync super-peer durable state (default data dir)
+.spherewiki-data/
+
 # env / secrets
 .env
 .env.*
