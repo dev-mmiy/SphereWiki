@@ -17,6 +17,7 @@
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "y-codemirror.next": "^0.3.5",
+    "y-indexeddb": "^9.0.12",
     "yjs": "^13.6.31"
   },
   "devDependencies": {
@@ -25,6 +26,7 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
+    "fake-indexeddb": "^6.2.5",
     "vite": "^8.1.0"
   }
 }

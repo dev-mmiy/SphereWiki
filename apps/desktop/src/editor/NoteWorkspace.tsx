@@ -2,6 +2,7 @@ import type { OnSaveResult } from "@spherewiki/ai"
 import { type AuthProvider, can, type DiffChunk, roleFor } from "@spherewiki/shared"
 import { useState } from "react"
 import { devAuth, WORKSPACE_ID } from "../auth-dev"
+import { connectLocalPersistence } from "../sync/local-persistence"
 import { AskPanel } from "./ask-panel"
 import { DiffView, HistoryPanel } from "./history-panel"
 import { LinksPanel } from "./links-panel"
@@ -28,9 +29,11 @@ function describeResult(r: OnSaveResult): string {
 
 export function NoteWorkspace({ auth = devAuth() }: { auth?: AuthProvider }) {
   // Durable local vault (survives reload, offline); opt-in live sync via VITE_SYNC_URL.
+  // When syncing, a local CRDT cache (IndexedDB) keeps the room readable offline.
   const ws = useVaultWorkspace({
     syncUrl: import.meta.env.VITE_SYNC_URL,
     persistVaultKey: `spherewiki:vault:${WORKSPACE_ID}`,
+    localPersistence: connectLocalPersistence,
   })
   const [diff, setDiff] = useState<readonly DiffChunk[] | null>(null)
   const [aiStatus, setAiStatus] = useState<string | null>(null)

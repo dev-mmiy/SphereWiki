@@ -38,6 +38,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { WORKSPACE_ID } from "../auth-dev"
 import { type ConnectNote, connectNoteToServer } from "../sync/connect-server"
+import type { ConnectLocalPersistence, LocalDocPersistence } from "../sync/local-persistence"
 import { createLocalStorageVault } from "../vault/local-vault"
 
 const LOCAL: EditOrigin = { actor: "local", kind: "human" }
@@ -82,6 +83,12 @@ export interface UseVaultWorkspaceOptions {
   readonly syncUrl?: string
   /** Inject the sync transport (the real super-peer in the app; a fake in tests). */
   readonly connect?: ConnectNote
+  /**
+   * Inject local CRDT persistence for *synced* rooms (the real IndexedDB store in the
+   * app; an in-memory fake in tests). Only used when `syncUrl` is set; it makes a
+   * synced room readable offline by loading its last-synced state from a local cache.
+   */
+  readonly localPersistence?: ConnectLocalPersistence
   /** When set, the vault is durably persisted to localStorage under this key (survives reload). */
   readonly persistVaultKey?: string
   /** Storage backend for the durable vault; defaults to window.localStorage (injectable for tests). */
@@ -161,31 +168,51 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
 
   useEffect(() => {
     const note = openYjsNote()
+    const syncing = syncUrl !== undefined
+    let disposed = false
+    // In sync mode the CRDT (local cache + super-peer) is authoritative and the Markdown
+    // vault is its offline-readable cache: never write an EMPTY doc back to the vault, or a
+    // pre-sync doc, a fast note switch, or a brand-new empty room would clobber real Markdown.
+    // (In no-sync mode the doc is seeded from the vault, so clearing a note to "" is a real edit.)
+    const writableToVault = (): boolean => !syncing || note.getText() !== ""
     const persist = (): void => {
+      if (!writableToVault()) return
       vault.write(activeId, note.getText())
       setGraph(computeGraph(vault))
     }
-    // When syncing, the super-peer is authoritative for this room: hydrate from it
-    // rather than the local seed (seeding both sides would merge into garbled text).
-    // Until hydration completes, the doc is empty — never write that back to the
-    // vault (that would clobber the Markdown source of truth, e.g. offline or on a
-    // fast note switch). Offline/no-sync mode is "hydrated" from the local seed at once.
+    // "Hydrated" means edits may flow back to the vault. It flips once the authoritative
+    // state has arrived (local cache loaded or server synced) — even if that state is empty,
+    // in which case persist() simply no-ops until the first real content appears.
     let hydrated = false
+    const markHydrated = (): void => {
+      if (disposed || hydrated) return
+      hydrated = true
+      persist()
+    }
+
     const connect = options.connect ?? connectNoteToServer
-    const disconnect = syncUrl
-      ? connect(note, {
-          url: syncUrl,
-          room: `${workspaceId}/${activeId}`,
-          onHydrated: () => {
-            hydrated = true
-            persist()
-          },
+    let local: LocalDocPersistence | null = null
+    let disconnect: (() => void) | null = null
+
+    if (syncUrl !== undefined) {
+      const room = `${workspaceId}/${activeId}`
+      // Offline-first for a synced room: load the last-synced state from local CRDT
+      // persistence so the editor is readable with zero connectivity; the super-peer then
+      // merges live edits on top of the same doc via CRDT. The empty-doc guard in persist()
+      // means hydrating from an empty cache or an empty server room never clobbers the vault.
+      if (options.localPersistence !== undefined) {
+        local = options.localPersistence(note, room)
+        void local.whenLoaded.then(() => {
+          if (!disposed) markHydrated()
         })
-      : null
-    if (disconnect === null) {
+      }
+      // The super-peer is authoritative; it merges on top of any local cache via CRDT.
+      disconnect = connect(note, { url: syncUrl, room, onHydrated: markHydrated })
+    } else {
       note.setText(vault.read(activeId), LOCAL)
       hydrated = true
     }
+
     const off = note.subscribe(() => {
       if (hydrated) persist()
     })
@@ -193,12 +220,14 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     setVersions(storeFor(activeId).list())
     setGraph(computeGraph(vault))
     return () => {
+      disposed = true
       off()
-      if (hydrated) vault.write(activeId, note.getText())
+      if (hydrated && writableToVault()) vault.write(activeId, note.getText())
       disconnect?.()
+      local?.destroy()
       note.destroy()
     }
-  }, [activeId, vault, storeFor, syncUrl, workspaceId, options.connect])
+  }, [activeId, vault, storeFor, syncUrl, workspaceId, options.connect, options.localPersistence])
 
   const activeNote = active && active.id === activeId ? active.note : null
   // Track the live active id so an in-flight AI run can tell if the user has switched away.

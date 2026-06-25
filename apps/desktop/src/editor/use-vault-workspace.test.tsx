@@ -3,9 +3,16 @@ import { act, renderHook } from "@testing-library/react"
 import { describe, expect, it } from "vitest"
 import { devAuth } from "../auth-dev"
 import type { ConnectNote } from "../sync/connect-server"
+import type { ConnectLocalPersistence } from "../sync/local-persistence"
 import { useVaultWorkspace } from "./use-vault-workspace"
 
 const LOCAL = { actor: "local", kind: "human" } as const
+
+/** Flush pending microtasks + timers so async hydration (whenLoaded) settles. */
+const flush = (): Promise<void> =>
+  act(async () => {
+    await new Promise((r) => setTimeout(r, 0))
+  })
 
 describe("useVaultWorkspace", () => {
   it("opens the first note with its outgoing links", () => {
@@ -190,6 +197,167 @@ describe("useVaultWorkspace", () => {
     // The un-hydrated cleanup must not have overwritten Home's Markdown with "" —
     // its outgoing links (derived from the vault body) are still intact.
     expect(result.current.outgoing).toEqual(expect.arrayContaining(["Getting Started", "Ideas"]))
+  })
+
+  it("reads a synced room offline from local CRDT persistence (no server needed)", async () => {
+    // The local cache holds the last-synced content; the server never hydrates (offline).
+    const localPersistence: ConnectLocalPersistence = (note) => ({
+      whenLoaded: Promise.resolve().then(() => note.setText("# Offline Home\n", LOCAL)),
+      destroy: () => {},
+    })
+    const connect: ConnectNote = () => () => {} // connects but never hydrates (offline)
+    const { result } = renderHook(() =>
+      useVaultWorkspace({ syncUrl: "ws://x", connect, localPersistence }),
+    )
+    await flush()
+    expect(result.current.activeNote?.getText()).toBe("# Offline Home\n")
+  })
+
+  it("defers to the server when the local cache is empty (no clobber)", async () => {
+    const localPersistence: ConnectLocalPersistence = () => ({
+      whenLoaded: Promise.resolve(), // nothing cached yet
+      destroy: () => {},
+    })
+    const connect: ConnectNote = (note, opts) => {
+      note.setText("# Server Home\n", LOCAL)
+      opts.onHydrated()
+      return () => {}
+    }
+    const { result } = renderHook(() =>
+      useVaultWorkspace({ syncUrl: "ws://x", connect, localPersistence }),
+    )
+    await flush()
+    expect(result.current.activeNote?.getText()).toBe("# Server Home\n")
+  })
+
+  it("tears down local CRDT persistence on unmount", async () => {
+    let destroyed = 0
+    const localPersistence: ConnectLocalPersistence = () => ({
+      whenLoaded: Promise.resolve(),
+      destroy: () => {
+        destroyed++
+      },
+    })
+    // Stable refs: the effect depends on connect/localPersistence by identity.
+    const connect: ConnectNote = () => () => {}
+    const { unmount } = renderHook(() =>
+      useVaultWorkspace({ syncUrl: "ws://x", connect, localPersistence }),
+    )
+    await flush()
+    unmount()
+    expect(destroyed).toBe(1)
+  })
+
+  it("never writes an empty doc to the vault across a switch (no clobber, server unreachable)", async () => {
+    const localPersistence: ConnectLocalPersistence = () => ({
+      whenLoaded: Promise.resolve(), // empty cache
+      destroy: () => {},
+    })
+    const connect: ConnectNote = () => () => {} // never hydrates
+    const { result } = renderHook(() =>
+      useVaultWorkspace({ syncUrl: "ws://x", connect, localPersistence }),
+    )
+    const ideas = result.current.notes.find((m) => m.title === "Ideas")
+    act(() => {
+      if (ideas) result.current.select(ideas.id)
+    })
+    const home = result.current.notes.find((m) => m.title === "Home")
+    act(() => {
+      if (home) result.current.select(home.id)
+    })
+    await flush()
+    // The vault's Markdown was never overwritten with the empty pre-sync doc.
+    expect(result.current.outgoing).toEqual(expect.arrayContaining(["Getting Started", "Ideas"]))
+  })
+
+  it("never clobbers the vault when the server hydrates an empty room", async () => {
+    // Models the REAL super-peer: `synced` fires even for an empty room, with no text set —
+    // markHydrated must not persist that empty doc over the note's Markdown.
+    const connect: ConnectNote = (_note, opts) => {
+      opts.onHydrated()
+      return () => {}
+    }
+    const localPersistence: ConnectLocalPersistence = () => ({
+      whenLoaded: Promise.resolve(),
+      destroy: () => {},
+    })
+    const { result } = renderHook(() =>
+      useVaultWorkspace({ syncUrl: "ws://x", connect, localPersistence }),
+    )
+    await flush()
+    // Home's Markdown — and its derived outgoing links — survived the empty authoritative sync.
+    expect(result.current.outgoing).toEqual(expect.arrayContaining(["Getting Started", "Ideas"]))
+  })
+
+  it("persists the first edit to a synced room that hydrated empty (offline-first create)", async () => {
+    const connect: ConnectNote = (_note, opts) => {
+      opts.onHydrated() // authoritative-but-empty room
+      return () => {}
+    }
+    const localPersistence: ConnectLocalPersistence = () => ({
+      whenLoaded: Promise.resolve(),
+      destroy: () => {},
+    })
+    const { result } = renderHook(() =>
+      useVaultWorkspace({ syncUrl: "ws://x", connect, localPersistence }),
+    )
+    await flush()
+    act(() => result.current.activeNote?.setText("# Home\n\nonly [[Ideas]] now\n", LOCAL))
+    // The first real edit reached the vault (non-empty, so the sync-mode guard allows it):
+    // the graph, derived from the vault body, now reflects the edit rather than the seed.
+    expect(result.current.outgoing).toEqual(["Ideas"])
+  })
+
+  it("disconnects the server provider on note switch and on unmount", async () => {
+    let connects = 0
+    let disconnects = 0
+    const connect: ConnectNote = (_note, opts) => {
+      connects++
+      opts.onHydrated()
+      return () => {
+        disconnects++
+      }
+    }
+    const localPersistence: ConnectLocalPersistence = () => ({
+      whenLoaded: Promise.resolve(),
+      destroy: () => {},
+    })
+    const { result, unmount } = renderHook(() =>
+      useVaultWorkspace({ syncUrl: "ws://x", connect, localPersistence }),
+    )
+    await flush()
+    const ideas = result.current.notes.find((m) => m.title === "Ideas")
+    act(() => {
+      if (ideas) result.current.select(ideas.id)
+    })
+    expect(disconnects).toBe(1) // the previous note's provider was torn down on switch
+    unmount()
+    expect(disconnects).toBe(connects) // every provider opened was disconnected
+  })
+
+  it("ignores a local-cache load that resolves after disposal (no use-after-destroy)", async () => {
+    let resolve: (() => void) | null = null
+    let destroyed = 0
+    const localPersistence: ConnectLocalPersistence = () => ({
+      whenLoaded: new Promise<void>((r) => {
+        resolve = r
+      }),
+      destroy: () => {
+        destroyed++
+      },
+    })
+    const connect: ConnectNote = () => () => {}
+    const { unmount } = renderHook(() =>
+      useVaultWorkspace({ syncUrl: "ws://x", connect, localPersistence }),
+    )
+    unmount() // disposes before the cache resolves
+    expect(destroyed).toBe(1) // torn down on unmount
+    // Resolving now must hit the `disposed` guard: no throw, no resurrection.
+    await act(async () => {
+      resolve?.()
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    expect(destroyed).toBe(1)
   })
 
   it("persists the vault across a remount when persistVaultKey is set (offline durability)", () => {
