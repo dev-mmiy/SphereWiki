@@ -53,3 +53,46 @@ export interface CrdtEngine {
   /** Reconstruct a document from a snapshot (for preview/revert). */
   fromSnapshot(snapshot: CrdtSnapshot): CrdtNote
 }
+
+/** Metadata for one note in the workspace registry (the synced note list). */
+export interface RegistryEntry {
+  /** Display title of the note. */
+  readonly title: string
+}
+
+export interface CrdtRegistryEvent {
+  /** Full registry snapshot (note id → entry) after the change. */
+  readonly entries: ReadonlyMap<string, RegistryEntry>
+  /** Origin of a local change, when known. */
+  readonly origin?: EditOrigin
+  /** True when the change arrived via a merged remote update. */
+  readonly remote: boolean
+}
+
+/**
+ * The workspace's note registry: a CRDT map of note id → metadata, replicated per
+ * workspace so creating / renaming / removing a note propagates to every peer
+ * (the note *list*, distinct from each note's body `CrdtNote`). Engine-agnostic:
+ * product code depends on this interface, never on a concrete engine. Ids are plain
+ * strings here — the domain `NoteId` is mapped on top by callers.
+ */
+export interface CrdtRegistry {
+  /** Snapshot of all entries (note id → metadata). */
+  entries(): ReadonlyMap<string, RegistryEntry>
+  /** Look up one entry. */
+  get(id: string): RegistryEntry | undefined
+  /** Insert or replace an entry (last-writer-wins per id), tagged with origin. */
+  set(id: string, entry: RegistryEntry, origin: EditOrigin): void
+  /** Remove an entry, tagged with origin. No-op if absent. */
+  delete(id: string, origin: EditOrigin): void
+  /** Merge a remote/peer update. */
+  applyUpdate(update: CrdtUpdate): void
+  /** Encode the whole current state (self-contained) for sync/persistence. */
+  encodeState(): CrdtUpdate
+  /** Observe registry changes; returns an unsubscribe function. */
+  subscribe(listener: (event: CrdtRegistryEvent) => void): () => void
+  /** Observe raw CRDT updates for sync transports; `local` is false for merged remote updates. */
+  onUpdate(listener: (update: CrdtUpdate, info: { local: boolean }) => void): () => void
+  /** Release resources. */
+  destroy(): void
+}

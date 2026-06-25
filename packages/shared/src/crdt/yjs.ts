@@ -2,10 +2,13 @@ import * as Y from "yjs"
 import type {
   CrdtEngine,
   CrdtNote,
+  CrdtRegistry,
+  CrdtRegistryEvent,
   CrdtSnapshot,
   CrdtTextEvent,
   CrdtUpdate,
   EditOrigin,
+  RegistryEntry,
 } from "./types"
 
 /** The only file in the codebase that imports a concrete CRDT engine. */
@@ -132,4 +135,108 @@ export const yjsEngine: CrdtEngine = {
 /** Open a Yjs-backed note exposing the underlying doc/text for the editor seam. */
 export function openYjsNote(init?: CrdtUpdate): YjsBackedNote {
   return openDoc(init)
+}
+
+/** Yjs-only accessor for the sync seam — the transport needs the real Y.Doc. */
+export interface YjsBackedRegistry extends CrdtRegistry {
+  readonly ydoc: Y.Doc
+}
+
+const REGISTRY_KEY = "registry"
+
+/**
+ * Coerce an untrusted Y.Map value to a RegistryEntry, or undefined if malformed.
+ * Yjs does no runtime validation, so a buggy/hostile peer can merge a non-`{title}`
+ * value into the shared registry map; validate at the read boundary so the adapter
+ * never hands product code a `RegistryEntry` whose `title` is not actually a string.
+ */
+function toRegistryEntry(value: unknown): RegistryEntry | undefined {
+  if (typeof value !== "object" || value === null) return undefined
+  const title = (value as { title?: unknown }).title
+  return typeof title === "string" ? { title } : undefined
+}
+
+class YjsRegistry implements YjsBackedRegistry {
+  readonly #doc: Y.Doc
+  readonly #map: Y.Map<RegistryEntry>
+
+  constructor(doc: Y.Doc) {
+    this.#doc = doc
+    this.#map = doc.getMap(REGISTRY_KEY)
+  }
+
+  get ydoc(): Y.Doc {
+    return this.#doc
+  }
+
+  entries(): ReadonlyMap<string, RegistryEntry> {
+    const out = new Map<string, RegistryEntry>()
+    // toRegistryEntry returns a fresh, validated copy: callers can't mutate CRDT state
+    // through the snapshot, and a malformed remote entry is dropped rather than surfaced.
+    this.#map.forEach((value, key) => {
+      const entry = toRegistryEntry(value)
+      if (entry !== undefined) out.set(key, entry)
+    })
+    return out
+  }
+
+  get(id: string): RegistryEntry | undefined {
+    return toRegistryEntry(this.#map.get(id))
+  }
+
+  set(id: string, entry: RegistryEntry, origin: EditOrigin): void {
+    this.#doc.transact(() => this.#map.set(id, { title: entry.title }), origin)
+  }
+
+  delete(id: string, origin: EditOrigin): void {
+    if (!this.#map.has(id)) return
+    this.#doc.transact(() => this.#map.delete(id), origin)
+  }
+
+  applyUpdate(update: CrdtUpdate): void {
+    Y.applyUpdate(this.#doc, update)
+  }
+
+  encodeState(): CrdtUpdate {
+    return Y.encodeStateAsUpdate(this.#doc)
+  }
+
+  subscribe(listener: (event: CrdtRegistryEvent) => void): () => void {
+    const handler = (_event: Y.YMapEvent<RegistryEntry>, transaction: Y.Transaction): void => {
+      const origin = isEditOrigin(transaction.origin) ? transaction.origin : undefined
+      const entries = this.entries()
+      listener(
+        origin
+          ? { entries, remote: !transaction.local, origin }
+          : { entries, remote: !transaction.local },
+      )
+    }
+    this.#map.observe(handler)
+    return () => this.#map.unobserve(handler)
+  }
+
+  onUpdate(listener: (update: CrdtUpdate, info: { local: boolean }) => void): () => void {
+    const handler = (
+      update: Uint8Array,
+      _origin: unknown,
+      _doc: Y.Doc,
+      tr: Y.Transaction,
+    ): void => {
+      listener(update, { local: tr.local })
+    }
+    this.#doc.on("update", handler)
+    return () => this.#doc.off("update", handler)
+  }
+
+  destroy(): void {
+    this.#doc.destroy()
+  }
+}
+
+/** Open a Yjs-backed workspace note registry exposing the underlying doc for the sync seam. */
+export function openYjsRegistry(init?: CrdtUpdate): YjsBackedRegistry {
+  // gc:false keeps the registry consistent with the note docs (tombstones retained, AD-4).
+  const doc = new Y.Doc({ gc: false })
+  if (init !== undefined) Y.applyUpdate(doc, init)
+  return new YjsRegistry(doc)
 }
