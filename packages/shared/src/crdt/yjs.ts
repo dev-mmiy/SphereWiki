@@ -84,8 +84,20 @@ class YjsNote implements YjsBackedNote {
   }
 
   snapshot(): CrdtSnapshot {
-    // Self-contained: applying it to a fresh doc reconstructs this state.
-    return Y.encodeStateAsUpdate(this.#doc)
+    // Self-contained AND compact. The live doc runs gc:false (AD-4 history substrate),
+    // so its raw encoding retains every deleted character — a churn-heavy note would make
+    // each per-version snapshot, and the N snapshots a note accumulates, grow without bound.
+    // Round-trip the current state through a gc:true doc so the stored snapshot carries only
+    // the visible content (tombstones collapse to tiny GC structs), then re-encode. Applying
+    // it to a fresh doc still reconstructs this exact state, so the version layer's contract
+    // (self-contained restore points) is preserved; only the on-the-wire size shrinks.
+    const compactor = new Y.Doc({ gc: true })
+    try {
+      Y.applyUpdate(compactor, Y.encodeStateAsUpdate(this.#doc))
+      return Y.encodeStateAsUpdate(compactor)
+    } finally {
+      compactor.destroy()
+    }
   }
 
   subscribe(listener: (event: CrdtTextEvent) => void): () => void {
