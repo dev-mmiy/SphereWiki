@@ -38,6 +38,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { WORKSPACE_ID } from "../auth-dev"
 import { type ConnectNote, connectNoteToServer } from "../sync/connect-server"
+import { createLocalStorageVault } from "../vault/local-vault"
 
 const LOCAL: EditOrigin = { actor: "local", kind: "human" }
 
@@ -81,6 +82,10 @@ export interface UseVaultWorkspaceOptions {
   readonly syncUrl?: string
   /** Inject the sync transport (the real super-peer in the app; a fake in tests). */
   readonly connect?: ConnectNote
+  /** When set, the vault is durably persisted to localStorage under this key (survives reload). */
+  readonly persistVaultKey?: string
+  /** Storage backend for the durable vault; defaults to window.localStorage (injectable for tests). */
+  readonly vaultStorage?: Pick<Storage, "getItem" | "setItem">
 }
 
 /**
@@ -93,7 +98,15 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
   const workspaceId = options.workspaceId ?? WORKSPACE_ID
   const syncUrl = options.syncUrl
   const vaultRef = useRef<Vault | null>(null)
-  if (vaultRef.current === null) vaultRef.current = createMemoryVault(SEED)
+  if (vaultRef.current === null) {
+    vaultRef.current =
+      options.persistVaultKey !== undefined
+        ? createLocalStorageVault(SEED, {
+            key: options.persistVaultKey,
+            ...(options.vaultStorage !== undefined ? { storage: options.vaultStorage } : {}),
+          })
+        : createMemoryVault(SEED)
+  }
   const vault = vaultRef.current
 
   // Per-workspace AI: a deterministic local embedder + heuristic suggester + an isolated

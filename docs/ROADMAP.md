@@ -60,7 +60,8 @@ Each milestone ends green on all Loop gates (`pnpm verify`) and meets its accept
 *Remaining done-when:* desktop/web sync against the *deployed* server with real accounts, and cross-workspace access is provably blocked at the DB.
 
 > **Storage & sync follow-ups (local, no credentials), surfaced by the S1/S2 review:**
-> - **Offline-first for *synced* rooms (S3):** today a synced room is online-first — its editor is empty until the server hydrates (the vault is never clobbered, but the content isn't shown offline). Local CRDT persistence (e.g. y-indexeddb) makes synced rooms readable offline *and* lets initial content be seeded **once** (so two clients can't double-seed into garbled text).
+> - ✅ **Durable local vault (S3a, done):** the desktop vault persists to `localStorage` (`createLocalStorageVault`, behind the `Vault` seam), so the note list + Markdown survive a reload offline; it degrades to in-memory if storage is unavailable. Note ids stay stable across reloads so sync room names don't drift.
+> - **Offline-first for *synced* rooms (S3b):** today a synced room is online-first — its editor is empty until the server hydrates (the vault is never clobbered, but the content isn't shown offline). Local CRDT persistence (e.g. y-indexeddb) makes synced rooms readable offline *and* lets initial content be seeded **once** (so two clients can't double-seed into garbled text).
 > - Sync the *whole vault* (note list + content), not just the active note; multiplex one socket per workspace (the workspace is the replication boundary) instead of one per note.
 > - **Persistence compaction:** `gc:false` docs (kept for history snapshots, AD-4) grow unbounded when stored via `encodeStateAsUpdate`; add snapshot/compaction.
 > - **Room-level authorization** (`onAuthenticate`): today any client can join any room — isolation is client-side naming only. Real token-checked room access lands with WorkOS in M3b.

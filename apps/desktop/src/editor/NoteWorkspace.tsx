@@ -27,8 +27,11 @@ function describeResult(r: OnSaveResult): string {
 }
 
 export function NoteWorkspace({ auth = devAuth() }: { auth?: AuthProvider }) {
-  // Opt-in live sync: set VITE_SYNC_URL (e.g. ws://127.0.0.1:8787) to sync via the super-peer.
-  const ws = useVaultWorkspace({ syncUrl: import.meta.env.VITE_SYNC_URL })
+  // Durable local vault (survives reload, offline); opt-in live sync via VITE_SYNC_URL.
+  const ws = useVaultWorkspace({
+    syncUrl: import.meta.env.VITE_SYNC_URL,
+    persistVaultKey: `spherewiki:vault:${WORKSPACE_ID}`,
+  })
   const [diff, setDiff] = useState<readonly DiffChunk[] | null>(null)
   const [aiStatus, setAiStatus] = useState<string | null>(null)
   const clearDiff = () => setDiff(null)

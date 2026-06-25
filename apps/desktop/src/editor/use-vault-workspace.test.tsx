@@ -191,4 +191,23 @@ describe("useVaultWorkspace", () => {
     // its outgoing links (derived from the vault body) are still intact.
     expect(result.current.outgoing).toEqual(expect.arrayContaining(["Getting Started", "Ideas"]))
   })
+
+  it("persists the vault across a remount when persistVaultKey is set (offline durability)", () => {
+    // Share one working storage across both mounts (the test env's localStorage is unreliable).
+    const m = new Map<string, string>()
+    const vaultStorage = {
+      getItem: (k: string) => m.get(k) ?? null,
+      setItem: (k: string, v: string) => {
+        m.set(k, v)
+      },
+    }
+    const opts = { persistVaultKey: "test:vault:durable", vaultStorage }
+    const first = renderHook(() => useVaultWorkspace(opts))
+    act(() => first.result.current.activeNote?.setText("# Home\n\npersisted body\n", LOCAL))
+    first.unmount() // cleanup writes the doc back to the (durable) vault
+
+    const second = renderHook(() => useVaultWorkspace(opts))
+    expect(second.result.current.activeNote?.getText()).toContain("persisted body")
+    second.unmount()
+  })
 })
