@@ -1,7 +1,6 @@
 import { asNoteId, type NoteId, type NoteMeta, type Vault } from "@spherewiki/shared"
 
 interface StoredVault {
-  counter: number
   notes: Array<{ id: string; title: string; body: string }>
 }
 
@@ -12,6 +11,23 @@ export interface LocalStorageVaultOptions {
   readonly key: string
   /** Storage backend; defaults to a working window.localStorage (injectable for tests). */
   readonly storage?: StorageLike
+  /** Note-id generator; defaults to a collision-resistant UUID (injectable for deterministic tests). */
+  readonly newId?: () => string
+}
+
+/** Legacy per-client counter ids (n1, n2, …) — migrated to UUIDs so peers can't collide. */
+const LEGACY_ID = /^n\d+$/
+
+/**
+ * A collision-resistant note id. UUIDs are globally unique, so two peers can never mint
+ * the same id — the registry map key and the body sync room `${workspace}/${id}` are
+ * therefore collision-free across peers (a prerequisite for syncing the note list).
+ */
+function defaultNewId(): string {
+  const webCrypto = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto
+  if (webCrypto?.randomUUID !== undefined) return webCrypto.randomUUID()
+  // Fallback for an exotic runtime without Web Crypto; tests always inject a deterministic id.
+  return `id-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
 }
 
 /**
@@ -46,8 +62,9 @@ function resolveStorage(provided: StorageLike | undefined): StorageLike {
 /**
  * A durable, localStorage-backed Vault: the Markdown documents (note list + bodies)
  * survive a reload with zero connectivity — offline-first storage of the source of
- * truth. Same id scheme (`n1`, `n2`, …) as the in-memory vault, so note ids — and
- * thus sync room names — stay stable across reloads. A file-backed Tauri vault
+ * truth. New notes get globally-unique ids (so the eventual synced note registry and
+ * body rooms can't collide across peers); any legacy `n*` ids from older local data are
+ * migrated to UUIDs on load, before any sync room is joined. A file-backed Tauri vault
  * implements this same `Vault` seam on the desktop later.
  */
 export function createLocalStorageVault(
@@ -56,12 +73,11 @@ export function createLocalStorageVault(
 ): Vault {
   const storage = resolveStorage(options.storage)
   const { key } = options
+  const newId = options.newId ?? defaultNewId
   const notes = new Map<NoteId, { meta: NoteMeta; body: string }>()
-  let counter = 0
 
   const persist = (): void => {
     const data: StoredVault = {
-      counter,
       notes: [...notes.values()].map((n) => ({ id: n.meta.id, title: n.meta.title, body: n.body })),
     }
     storage.setItem(key, JSON.stringify(data))
@@ -73,7 +89,6 @@ export function createLocalStorageVault(
     try {
       const data = JSON.parse(raw) as Partial<StoredVault>
       if (!Array.isArray(data.notes)) return false
-      counter = typeof data.counter === "number" ? data.counter : 0
       for (const n of data.notes) {
         const id = asNoteId(n.id)
         notes.set(id, { meta: { id, title: n.title }, body: n.body })
@@ -84,15 +99,45 @@ export function createLocalStorageVault(
     }
   }
 
+  /** Re-key any legacy per-client `n*` ids to fresh UUIDs, preserving order, title, and body. */
+  const migrateLegacyIds = (): boolean => {
+    let changed = false
+    const rebuilt = new Map<NoteId, { meta: NoteMeta; body: string }>()
+    for (const [id, entry] of notes) {
+      if (LEGACY_ID.test(id)) {
+        const fresh = asNoteId(newId())
+        rebuilt.set(fresh, { meta: { id: fresh, title: entry.meta.title }, body: entry.body })
+        changed = true
+      } else {
+        rebuilt.set(id, entry)
+      }
+    }
+    if (changed) {
+      notes.clear()
+      for (const [id, entry] of rebuilt) notes.set(id, entry)
+    }
+    return changed
+  }
+
   const create = (title: string, body = ""): NoteMeta => {
-    counter++
-    const meta: NoteMeta = { id: asNoteId(`n${counter.toString()}`), title }
+    const meta: NoteMeta = { id: asNoteId(newId()), title }
     notes.set(meta.id, { meta, body })
     persist()
     return meta
   }
 
-  if (!load()) {
+  const ensure = (id: NoteId, title: string, body = ""): NoteMeta => {
+    const existing = notes.get(id)
+    if (existing !== undefined) return existing.meta // insert-if-absent: never overwrite a body
+    const meta: NoteMeta = { id, title }
+    notes.set(id, { meta, body })
+    persist()
+    return meta
+  }
+
+  if (load()) {
+    if (migrateLegacyIds()) persist()
+  } else {
     for (const entry of seed) create(entry.title, entry.body)
   }
 
@@ -111,5 +156,6 @@ export function createLocalStorageVault(
       persist()
     },
     create,
+    ensure,
   }
 }

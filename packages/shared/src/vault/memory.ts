@@ -27,6 +27,14 @@ export function createMemoryVault(
     return meta
   }
 
+  const ensure = (id: NoteId, title: string, body = ""): NoteMeta => {
+    const existing = notes.get(id)
+    if (existing !== undefined) return existing.meta // insert-if-absent: never overwrite a body
+    const meta: NoteMeta = { id, title }
+    notes.set(id, { meta, body })
+    return meta
+  }
+
   for (const entry of seed) create(entry.title, entry.body)
 
   return {
@@ -37,5 +45,6 @@ export function createMemoryVault(
       notes.set(id, { meta: note.meta, body })
     },
     create,
+    ensure,
   }
 }

@@ -32,4 +32,21 @@ describe("memory vault", () => {
     const vault = createMemoryVault()
     expect(() => vault.read(asNoteId("nope"))).toThrow(/unknown note/)
   })
+
+  it("ensure inserts at an explicit id if absent, else returns the existing meta unchanged", () => {
+    const vault = createMemoryVault([{ title: "Home", body: "# Home\n" }])
+    const [home] = vault.list()
+    if (home === undefined) throw new Error("expected note")
+    vault.write(home.id, "# Home\n\nlocal edit\n")
+
+    // Insert-if-absent: a registry-known id this replica lacks becomes a real note.
+    const added = vault.ensure(asNoteId("remote-1"), "Remote", "# Remote\n")
+    expect(added.id).toBe("remote-1")
+    expect(vault.read(asNoteId("remote-1"))).toBe("# Remote\n")
+
+    // Never overwrites an existing note's body.
+    const returned = vault.ensure(home.id, "Other", "# clobber\n")
+    expect(returned.title).toBe("Home")
+    expect(vault.read(home.id)).toBe("# Home\n\nlocal edit\n")
+  })
 })
