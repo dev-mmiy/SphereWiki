@@ -64,6 +64,25 @@ describe("NoteWorkspace", () => {
     expect(await within(region).findByRole("button", { name: "Ideas" })).toBeTruthy()
   })
 
+  it("deletes a note to the trash and restores it", () => {
+    render(<NoteWorkspace auth={devAuth("editor")} />)
+    const nav = screen.getByRole("navigation")
+    expect(within(nav).getByRole("button", { name: "Ideas" })).toBeTruthy()
+    fireEvent.click(within(nav).getByRole("button", { name: "Delete Ideas" }))
+    expect(within(nav).queryByRole("button", { name: "Ideas" })).toBeNull() // gone from the list
+    // Restorable from the trash.
+    fireEvent.click(within(nav).getByRole("button", { name: "Restore Ideas" }))
+    expect(within(nav).getByRole("button", { name: "Ideas" })).toBeTruthy()
+  })
+
+  it("disables delete for a viewer", () => {
+    render(<NoteWorkspace auth={devAuth("viewer")} />)
+    const nav = screen.getByRole("navigation")
+    expect(
+      (within(nav).getByRole("button", { name: "Delete Ideas" }) as HTMLButtonElement).disabled,
+    ).toBe(true)
+  })
+
   it("is read-only for a viewer", () => {
     render(<NoteWorkspace auth={devAuth("viewer")} />)
     expect(document.querySelector(".cm-content")?.getAttribute("contenteditable")).toBe("false")

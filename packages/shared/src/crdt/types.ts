@@ -58,6 +58,12 @@ export interface CrdtEngine {
 export interface RegistryEntry {
   /** Display title of the note. */
   readonly title: string
+  /**
+   * Soft-delete tombstone. A delete is an additive, convergent, revertible registry edit —
+   * `deleted: true` hides the note from the list across peers without erasing its Markdown
+   * body, so it can be restored (`deleted: false`) and never silently destroys human work.
+   */
+  readonly deleted?: boolean
 }
 
 export interface CrdtRegistryEvent {

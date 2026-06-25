@@ -64,12 +64,20 @@ export function NoteWorkspace({ auth = devAuth() }: { auth?: AuthProvider }) {
         notes={ws.notes}
         activeId={ws.activeId}
         canCreate={canWrite}
+        canEdit={canWrite}
+        deleted={ws.deleted}
         onSelect={(id) => {
           clearDiff()
           setAiStatus(null)
           ws.select(id)
         }}
         onCreate={() => ws.create(`Note ${ws.notes.length + 1}`)}
+        onDelete={(id) => {
+          clearDiff()
+          setAiStatus(null)
+          ws.remove(id)
+        }}
+        onRestore={(id) => ws.restore(id)}
       />
       {ws.activeNote && <NoteEditor key={ws.activeId} note={ws.activeNote} editable={canWrite} />}
       <div className="ai-bar">

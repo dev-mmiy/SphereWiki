@@ -68,9 +68,15 @@ export interface VaultWorkspace {
   readonly outgoing: readonly string[]
   readonly backlinks: readonly NoteMeta[]
   readonly versions: readonly Version[]
+  /** Tombstoned notes still recoverable locally (the "trash"). */
+  readonly deleted: readonly NoteMeta[]
   select: (id: NoteId) => void
   selectByTitle: (title: string) => void
   create: (title: string) => void
+  /** Soft-delete a note: hidden from the list across peers, body retained, revertible. */
+  remove: (id: NoteId) => void
+  /** Restore a soft-deleted note. */
+  restore: (id: NoteId) => void
   commit: (label?: string) => void
   revert: (id: string) => void
   diffAgainstCurrent: (id: string) => DiffChunk[]
@@ -193,16 +199,38 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
   const [graph, setGraph] = useState<LinkGraph>(() => computeGraph(vault))
   const [versions, setVersions] = useState<readonly Version[]>([])
   const [aiBusy, setAiBusy] = useState(false)
+  const [deleted, setDeleted] = useState<readonly NoteMeta[]>([])
+
+  // Live active id, read by callbacks that outlive a render: an in-flight AI run (to tell if the
+  // user switched away) and the registry reconcile (to move off a note a peer just deleted).
+  const activeIdRef = useRef(activeId)
+  activeIdRef.current = activeId
 
   // The displayed note list: the local vault (every reconciled registry note is materialized
   // into it) with the registry's title winning for display so a remote rename shows. Purely
-  // additive — a local note absent from the registry is always kept, never hidden or removed.
+  // additive — a local note absent from the registry is always kept, never hidden or removed —
+  // except an explicit, revertible tombstone (`deleted`), which hides the note from the list.
   const unionList = useCallback((): NoteMeta[] => {
     const entries = registry.entries()
-    return vault.list().map((m) => {
-      const entry = entries.get(m.id)
-      return entry !== undefined ? { id: m.id, title: entry.title } : m
-    })
+    return vault
+      .list()
+      .filter((m) => entries.get(m.id)?.deleted !== true)
+      .map((m) => {
+        const entry = entries.get(m.id)
+        return entry !== undefined ? { id: m.id, title: entry.title } : m
+      })
+  }, [vault, registry])
+
+  // Tombstoned notes still held locally (the "trash"): restorable, with their Markdown retained.
+  const deletedList = useCallback((): NoteMeta[] => {
+    const entries = registry.entries()
+    return vault
+      .list()
+      .filter((m) => entries.get(m.id)?.deleted === true)
+      .map((m) => {
+        const entry = entries.get(m.id)
+        return entry !== undefined ? { id: m.id, title: entry.title } : m
+      })
   }, [vault, registry])
 
   // Workspace-level registry sync (the note LIST converges across peers). Keyed on the
@@ -214,11 +242,21 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     // so remote state can't destroy local work.
     const reconcile = (): void => {
       if (disposed) return
+      // Materialize live (non-tombstoned) registry notes this replica lacks. A tombstone for a
+      // note we never had is ignored (don't resurrect a stranger's deleted note into our trash).
       for (const [id, entry] of registry.entries()) {
-        if (id !== REGISTRY_ROOM) vault.ensure(asNoteId(id), entry.title)
+        if (id !== REGISTRY_ROOM && entry.deleted !== true) vault.ensure(asNoteId(id), entry.title)
       }
-      setNotes(unionList())
+      const visible = unionList()
+      setNotes(visible)
+      setDeleted(deletedList())
       setGraph(computeGraph(vault))
+      // If the active note was just deleted (here or by a peer), move to the first visible note.
+      // Its body was persisted on the body effect's cleanup, so nothing is lost and it restores.
+      if (visible.length > 0 && !visible.some((m) => m.id === activeIdRef.current)) {
+        const next = visible[0]
+        if (next) setActiveId(next.id)
+      }
     }
     const off = registry.subscribe(reconcile)
 
@@ -253,6 +291,7 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     vault,
     registry,
     unionList,
+    deletedList,
     syncUrl,
     workspaceId,
     options.connectRegistry,
@@ -333,10 +372,13 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     }
   }, [activeId, vault, storeFor, syncUrl, workspaceId, options.connect, options.localPersistence])
 
-  const activeNote = active && active.id === activeId ? active.note : null
-  // Track the live active id so an in-flight AI run can tell if the user has switched away.
-  const activeIdRef = useRef(activeId)
-  activeIdRef.current = activeId
+  // Expose the active doc only when it matches the active id AND that note isn't tombstoned —
+  // so deleting the last visible note (or a peer deleting the one you're on) can't leave an
+  // editable editor bound to a trashed note. Restoring it (or selecting another) shows it again.
+  const activeNote =
+    active && active.id === activeId && registry.get(activeId)?.deleted !== true
+      ? active.note
+      : null
 
   const activeMeta = useMemo(() => notes.find((m) => m.id === activeId), [notes, activeId])
   const outgoing = useMemo<readonly string[]>(
@@ -376,6 +418,24 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
       setActiveId(meta.id)
     },
     [vault, registry, unionList],
+  )
+  // Delete = a revertible registry tombstone: it hides the note from the list across peers but
+  // never erases its Markdown body (kept in the vault), so it can be restored and no human work
+  // is silently destroyed. The reconcile fired by this set updates the list and, if this was the
+  // active note, moves to the first visible one.
+  const remove = useCallback(
+    (id: NoteId): void => {
+      const title = registry.get(id)?.title ?? vault.list().find((m) => m.id === id)?.title ?? id
+      registry.set(id, { title, deleted: true }, LOCAL)
+    },
+    [registry, vault],
+  )
+  const restore = useCallback(
+    (id: NoteId): void => {
+      const title = registry.get(id)?.title ?? vault.list().find((m) => m.id === id)?.title ?? id
+      registry.set(id, { title, deleted: false }, LOCAL)
+    },
+    [registry, vault],
   )
 
   const commit = (label?: string): void => {
@@ -461,9 +521,12 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     outgoing,
     backlinks,
     versions,
+    deleted,
     select,
     selectByTitle,
     create,
+    remove,
+    restore,
     commit,
     revert,
     diffAgainstCurrent,

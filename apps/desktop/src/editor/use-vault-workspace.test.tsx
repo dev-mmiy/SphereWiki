@@ -514,4 +514,68 @@ describe("useVaultWorkspace", () => {
     )
     expect(result.current.notes.map((m) => m.title)).toEqual(["Home", "Getting Started", "Ideas"])
   })
+
+  it("soft-deletes a note (hidden from the list, kept in trash, body retained, revertible)", () => {
+    const { result } = renderHook(() => useVaultWorkspace())
+    const ideas = result.current.notes.find((m) => m.title === "Ideas")
+    if (ideas === undefined) throw new Error("expected Ideas")
+    act(() => result.current.remove(ideas.id))
+    expect(result.current.notes.map((m) => m.title)).not.toContain("Ideas")
+    expect(result.current.deleted.map((m) => m.title)).toContain("Ideas")
+
+    act(() => result.current.restore(ideas.id))
+    expect(result.current.notes.map((m) => m.title)).toContain("Ideas")
+    expect(result.current.deleted).toHaveLength(0)
+    // The body was never erased by the delete — it's intact after restore.
+    act(() => result.current.select(ideas.id))
+    expect(result.current.activeNote?.getText()).toContain("AI auto-links")
+  })
+
+  it("moves off the active note when it is deleted (switches to a visible note)", () => {
+    const { result } = renderHook(() => useVaultWorkspace())
+    const home = result.current.activeId // Home is active initially
+    act(() => result.current.remove(home))
+    expect(result.current.activeId).not.toBe(home)
+    expect(result.current.notes.some((m) => m.id === result.current.activeId)).toBe(true)
+  })
+
+  it("hides the editor when the last visible note is deleted, and restores it", () => {
+    const { result } = renderHook(() => useVaultWorkspace())
+    const all = result.current.notes.map((m) => m.id)
+    act(() => {
+      for (const id of all) result.current.remove(id)
+    })
+    expect(result.current.notes).toHaveLength(0)
+    // No editable editor is left bound to a tombstoned note (body is retained, restorable).
+    expect(result.current.activeNote).toBeNull()
+    const activeId = result.current.activeId
+    act(() => result.current.restore(activeId))
+    expect(result.current.activeNote).not.toBeNull()
+    expect(result.current.notes.some((m) => m.id === activeId)).toBe(true)
+  })
+
+  it("hides a note when a peer tombstones it, then restores it (no data loss)", () => {
+    const hub = registryHub()
+    const { result } = renderHook(() =>
+      useVaultWorkspace({
+        syncUrl: "ws://x",
+        connect: noBodySync,
+        connectRegistry: hub.connect,
+        newNoteId: ids("a"),
+      }),
+    )
+    act(() => result.current.create("Spec"))
+    const spec = result.current.notes.find((m) => m.title === "Spec")
+    if (spec === undefined) throw new Error("expected Spec")
+    // A remote peer deletes it.
+    act(() =>
+      hub.server.set(spec.id, { title: "Spec", deleted: true }, { actor: "peer", kind: "human" }),
+    )
+    expect(result.current.notes.some((m) => m.id === spec.id)).toBe(false)
+    expect(result.current.deleted.some((m) => m.id === spec.id)).toBe(true)
+    // Restorable — a peer delete hides but never destroys.
+    act(() => result.current.restore(spec.id))
+    expect(result.current.notes.some((m) => m.id === spec.id)).toBe(true)
+    hub.server.destroy()
+  })
 })

@@ -132,6 +132,36 @@ describe("openYjsRegistry", () => {
     replica.destroy()
   })
 
+  it("carries a soft-delete tombstone that converges and is revertible", () => {
+    const a = openYjsRegistry()
+    a.set("n1", { title: "Home" }, alice)
+    const b = openYjsRegistry(a.encodeState())
+    // Delete on A, then merge into B.
+    a.set("n1", { title: "Home", deleted: true }, alice)
+    b.applyUpdate(a.encodeState())
+    expect(b.get("n1")).toEqual({ title: "Home", deleted: true })
+    // Restore on B, then merge back into A — both converge to not-deleted.
+    b.set("n1", { title: "Home", deleted: false }, bob)
+    a.applyUpdate(b.encodeState())
+    expect(a.get("n1")).toEqual({ title: "Home" }) // deleted omitted when false
+    expect(a.get("n1")?.deleted).toBeUndefined()
+    a.destroy()
+    b.destroy()
+  })
+
+  it("coerces a non-boolean tombstone from a remote peer to a safe shape", () => {
+    const peer = openYjsRegistry()
+    peer.set("n1", { title: "Home" }, alice)
+    const rawMap = peer.ydoc.getMap("registry") as Y.Map<unknown>
+    rawMap.set("n2", { title: "Truthy", deleted: "yes" }) // not a real boolean
+    const replica = openYjsRegistry(peer.encodeState())
+    // Only a strict `true` tombstones; a truthy non-boolean is treated as not-deleted.
+    expect(replica.get("n2")).toEqual({ title: "Truthy" })
+    expect(replica.get("n2")?.deleted).toBeUndefined()
+    peer.destroy()
+    replica.destroy()
+  })
+
   it("round-trips through encodeState (rebuildable from a prior update)", () => {
     const reg = openYjsRegistry()
     reg.set("n1", { title: "Home" }, alice)

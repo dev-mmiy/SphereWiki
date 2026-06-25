@@ -153,7 +153,9 @@ const REGISTRY_KEY = "registry"
 function toRegistryEntry(value: unknown): RegistryEntry | undefined {
   if (typeof value !== "object" || value === null) return undefined
   const title = (value as { title?: unknown }).title
-  return typeof title === "string" ? { title } : undefined
+  if (typeof title !== "string") return undefined
+  // Coerce the tombstone to a strict boolean; only `true` is meaningful (else omit it).
+  return (value as { deleted?: unknown }).deleted === true ? { title, deleted: true } : { title }
 }
 
 class YjsRegistry implements YjsBackedRegistry {
@@ -185,7 +187,10 @@ class YjsRegistry implements YjsBackedRegistry {
   }
 
   set(id: string, entry: RegistryEntry, origin: EditOrigin): void {
-    this.#doc.transact(() => this.#map.set(id, { title: entry.title }), origin)
+    const value: RegistryEntry = entry.deleted
+      ? { title: entry.title, deleted: true }
+      : { title: entry.title }
+    this.#doc.transact(() => this.#map.set(id, value), origin)
   }
 
   delete(id: string, origin: EditOrigin): void {
