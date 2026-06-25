@@ -2,6 +2,7 @@ import type { OnSaveResult } from "@spherewiki/ai"
 import { type AuthProvider, can, type DiffChunk, roleFor } from "@spherewiki/shared"
 import { useState } from "react"
 import { devAuth, WORKSPACE_ID } from "../auth-dev"
+import { AskPanel } from "./ask-panel"
 import { DiffView, HistoryPanel } from "./history-panel"
 import { LinksPanel } from "./links-panel"
 import { NoteEditor } from "./NoteEditor"
@@ -84,6 +85,15 @@ export function NoteWorkspace({ auth = devAuth() }: { auth?: AuthProvider }) {
           clearDiff()
         }}
         onDiff={(id) => setDiff(ws.diffAgainstCurrent(id))}
+      />
+      <AskPanel
+        canAsk={session !== null}
+        onAsk={(query) => ws.aiAsk(query)}
+        onNavigate={(title) => {
+          clearDiff()
+          setAiStatus(null)
+          ws.selectByTitle(title)
+        }}
       />
       {diff && <DiffView chunks={diff} />}
     </div>

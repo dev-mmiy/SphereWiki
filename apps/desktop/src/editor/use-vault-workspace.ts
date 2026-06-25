@@ -1,10 +1,16 @@
 import {
+  type Answerer,
+  createExtractiveAnswerer,
   createHeuristicSuggester,
   createLocalEmbedder,
   createMemoryVectorIndex,
+  createRagRetriever,
   type EmbeddingProvider,
   type NoteContext,
   type OnSaveResult,
+  type RagAnswer,
+  type RagRetriever,
+  reindexWorkspace,
   runOnSaveAgent,
   type SuggestionProvider,
   type VectorIndex,
@@ -19,6 +25,7 @@ import {
   type NoteId,
   type NoteMeta,
   openYjsNote,
+  parseNote,
   type Session,
   textDiff,
   type Vault,
@@ -60,6 +67,8 @@ export interface VaultWorkspace {
   aiOrganize: (session: Session) => Promise<OnSaveResult>
   /** True while an AI run is in flight (so the UI can prevent concurrent runs). */
   readonly aiBusy: boolean
+  /** RAG question-answering scoped to this workspace; returns a cited answer. */
+  aiAsk: (query: string) => Promise<RagAnswer>
 }
 
 export interface UseVaultWorkspaceOptions {
@@ -88,13 +97,23 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     embedder: EmbeddingProvider
     suggester: SuggestionProvider
     index: VectorIndex
+    retriever: RagRetriever
+    answerer: Answerer
   } | null>(null)
   if (aiRef.current === null) {
     const embedder = options.embedder ?? createLocalEmbedder()
+    const index = createMemoryVectorIndex(workspaceId, embedder.info)
     aiRef.current = {
       embedder,
       suggester: options.suggester ?? createHeuristicSuggester(),
-      index: createMemoryVectorIndex(workspaceId, embedder.info),
+      index,
+      // readBody returns the embedded text (the body) so the retriever's staleness check matches.
+      retriever: createRagRetriever({
+        embedder,
+        project: index,
+        readBody: (id) => parseNote(vault.read(id)).body,
+      }),
+      answerer: createExtractiveAnswerer(),
     }
   }
   const aiBusyRef = useRef(false)
@@ -238,6 +257,14 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
       setAiBusy(false)
     }
   }
+  const aiAsk = async (query: string): Promise<RagAnswer> => {
+    const ai = aiRef.current
+    if (ai === null || query.trim() === "") return { answer: "", citations: [] }
+    // Keep the derived index current with the Markdown (idempotent), then retrieve + answer.
+    await reindexWorkspace({ vault, index: ai.index, embedder: ai.embedder })
+    const chunks = await ai.retriever.retrieve({ text: query, k: 5 })
+    return ai.answerer.answer(query, chunks)
+  }
 
   return {
     notes,
@@ -254,5 +281,6 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     diffAgainstCurrent,
     aiOrganize,
     aiBusy,
+    aiAsk,
   }
 }

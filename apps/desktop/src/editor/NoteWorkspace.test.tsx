@@ -54,6 +54,16 @@ describe("NoteWorkspace", () => {
     expect(screen.getByText(/ai:on-save/)).toBeTruthy() // the AI version, attributed in history
   })
 
+  it("answers a workspace question with cited notes (RAG)", async () => {
+    render(<NoteWorkspace auth={devAuth("editor")} />)
+    fireEvent.change(screen.getByLabelText(/ask the workspace/i), {
+      target: { value: "auto links notes" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: /^ask$/i }))
+    const region = await screen.findByRole("region", { name: "Ask" })
+    expect(await within(region).findByRole("button", { name: "Ideas" })).toBeTruthy()
+  })
+
   it("is read-only for a viewer", () => {
     render(<NoteWorkspace auth={devAuth("viewer")} />)
     expect(document.querySelector(".cm-content")?.getAttribute("contenteditable")).toBe("false")

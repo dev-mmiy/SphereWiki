@@ -1,4 +1,4 @@
-import type { OnSaveResult, SuggestionProvider } from "@spherewiki/ai"
+import type { OnSaveResult, RagAnswer, SuggestionProvider } from "@spherewiki/ai"
 import { act, renderHook } from "@testing-library/react"
 import { describe, expect, it } from "vitest"
 import { devAuth } from "../auth-dev"
@@ -130,5 +130,25 @@ describe("useVaultWorkspace", () => {
     act(() => result.current.select(homeId))
     expect(result.current.activeNote?.getText()).toContain("aitag")
     expect(result.current.versions.some((v) => v.origin.kind === "ai")).toBe(true)
+  })
+
+  it("answers a question with cited workspace notes (RAG)", async () => {
+    const { result } = renderHook(() => useVaultWorkspace())
+    let ans: RagAnswer | undefined
+    await act(async () => {
+      ans = await result.current.aiAsk("auto links notes")
+    })
+    expect(ans?.citations.map((c) => c.title)).toContain("Ideas")
+    expect(ans?.answer.length ?? 0).toBeGreaterThan(0)
+  })
+
+  it("returns an empty answer for a blank query", async () => {
+    const { result } = renderHook(() => useVaultWorkspace())
+    let ans: RagAnswer | undefined
+    await act(async () => {
+      ans = await result.current.aiAsk("   ")
+    })
+    expect(ans?.citations).toHaveLength(0)
+    expect(ans?.answer).toBe("")
   })
 })
