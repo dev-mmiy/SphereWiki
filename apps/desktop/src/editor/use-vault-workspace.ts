@@ -16,6 +16,7 @@ import {
   type VectorIndex,
 } from "@spherewiki/ai"
 import {
+  asNoteId,
   buildLinkGraph,
   createMemoryVault,
   createMemoryVersionStore,
@@ -25,6 +26,7 @@ import {
   type NoteId,
   type NoteMeta,
   openYjsNote,
+  openYjsRegistry,
   parseNote,
   type Session,
   textDiff,
@@ -33,13 +35,19 @@ import {
   type VersionStore,
   type WorkspaceId,
   type YjsBackedNote,
+  type YjsBackedRegistry,
   yjsEngine,
 } from "@spherewiki/shared"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { WORKSPACE_ID } from "../auth-dev"
+import { type ConnectRegistry, connectRegistryToServer } from "../sync/connect-registry"
 import { type ConnectNote, connectNoteToServer } from "../sync/connect-server"
 import type { ConnectLocalPersistence, LocalDocPersistence } from "../sync/local-persistence"
+import type { ConnectRegistryPersistence } from "../sync/registry-persistence"
 import { createLocalStorageVault } from "../vault/local-vault"
+
+/** The reserved registry room id; note ids are UUIDs and can never equal it. */
+const REGISTRY_ROOM = "__registry__"
 
 const LOCAL: EditOrigin = { actor: "local", kind: "human" }
 
@@ -89,10 +97,16 @@ export interface UseVaultWorkspaceOptions {
    * synced room readable offline by loading its last-synced state from a local cache.
    */
   readonly localPersistence?: ConnectLocalPersistence
+  /** Inject the registry sync transport (the real super-peer in the app; a fake in tests). */
+  readonly connectRegistry?: ConnectRegistry
+  /** Inject local CRDT persistence for the registry doc (real IndexedDB in the app; a fake in tests). */
+  readonly registryPersistence?: ConnectRegistryPersistence
   /** When set, the vault is durably persisted to localStorage under this key (survives reload). */
   readonly persistVaultKey?: string
   /** Storage backend for the durable vault; defaults to window.localStorage (injectable for tests). */
   readonly vaultStorage?: Pick<Storage, "getItem" | "setItem">
+  /** Note-id generator threaded into the durable vault (injectable for deterministic tests). */
+  readonly newNoteId?: () => string
 }
 
 /**
@@ -111,10 +125,24 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
         ? createLocalStorageVault(SEED, {
             key: options.persistVaultKey,
             ...(options.vaultStorage !== undefined ? { storage: options.vaultStorage } : {}),
+            ...(options.newNoteId !== undefined ? { newId: options.newNoteId } : {}),
           })
-        : createMemoryVault(SEED)
+        : createMemoryVault(
+            SEED,
+            options.newNoteId !== undefined ? { newId: options.newNoteId } : {},
+          )
   }
   const vault = vaultRef.current
+
+  // The workspace note registry: a CRDT of the note LIST (id -> title), synced over a
+  // workspace-level room so a note created on one peer appears on the others. Hook-lifetime
+  // like the vault; the .ydoc only ever reaches the desktop registry transport seams.
+  const registryRef = useRef<YjsBackedRegistry | null>(null)
+  if (registryRef.current === null) registryRef.current = openYjsRegistry()
+  const registry = registryRef.current
+  // Ids of notes this client just created, whose body should be seeded into the synced doc
+  // (unique id + single author -> safe; this is NOT the shared-seed double-seed case).
+  const pendingSeedRef = useRef<Set<NoteId>>(new Set())
 
   // Per-workspace AI: a deterministic local embedder + heuristic suggester + an isolated
   // vector index sealed to this workspace. The real Claude/ONNX/pgvector backends slot in
@@ -166,6 +194,74 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
   const [versions, setVersions] = useState<readonly Version[]>([])
   const [aiBusy, setAiBusy] = useState(false)
 
+  // The displayed note list: the local vault (every reconciled registry note is materialized
+  // into it) with the registry's title winning for display so a remote rename shows. Purely
+  // additive — a local note absent from the registry is always kept, never hidden or removed.
+  const unionList = useCallback((): NoteMeta[] => {
+    const entries = registry.entries()
+    return vault.list().map((m) => {
+      const entry = entries.get(m.id)
+      return entry !== undefined ? { id: m.id, title: entry.title } : m
+    })
+  }, [vault, registry])
+
+  // Workspace-level registry sync (the note LIST converges across peers). Keyed on the
+  // workspace/sync inputs — NOT activeId — so switching notes never reconnects this socket.
+  useEffect(() => {
+    let disposed = false
+    // Add-only reconcile: materialize every registry entry this replica lacks. It NEVER
+    // removes a local note for being absent from a (possibly empty / un-hydrated) registry,
+    // so remote state can't destroy local work.
+    const reconcile = (): void => {
+      if (disposed) return
+      for (const [id, entry] of registry.entries()) {
+        if (id !== REGISTRY_ROOM) vault.ensure(asNoteId(id), entry.title)
+      }
+      setNotes(unionList())
+      setGraph(computeGraph(vault))
+    }
+    const off = registry.subscribe(reconcile)
+
+    let local: LocalDocPersistence | null = null
+    let disconnect: (() => void) | null = null
+    if (syncUrl !== undefined) {
+      const room = `${workspaceId}/${REGISTRY_ROOM}`
+      if (options.registryPersistence !== undefined) {
+        local = options.registryPersistence(registry, room)
+        void local.whenLoaded.then(() => {
+          if (!disposed) reconcile()
+        })
+      }
+      const connectRegistry = options.connectRegistry ?? connectRegistryToServer
+      disconnect = connectRegistry(registry, {
+        url: syncUrl,
+        room,
+        onHydrated: () => {
+          if (!disposed) reconcile()
+        },
+      })
+    }
+    reconcile() // covers no-sync mode + any pre-existing registry state
+    return () => {
+      disposed = true
+      off()
+      disconnect?.()
+      local?.destroy()
+      // The registry doc is hook-lifetime; it is destroyed on unmount, not on this re-run.
+    }
+  }, [
+    vault,
+    registry,
+    unionList,
+    syncUrl,
+    workspaceId,
+    options.connectRegistry,
+    options.registryPersistence,
+  ])
+
+  // Destroy the hook-lifetime registry doc only on full unmount.
+  useEffect(() => () => registryRef.current?.destroy(), [])
+
   useEffect(() => {
     const note = openYjsNote()
     const syncing = syncUrl !== undefined
@@ -196,6 +292,14 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
 
     if (syncUrl !== undefined) {
       const room = `${workspaceId}/${activeId}`
+      // A note this client just created: seed its body into the synced doc from the vault.
+      // The id is a fresh UUID authored only here, so this is NOT the shared-seed double-seed
+      // case — seeding makes the creator see their content and lets peers receive the body.
+      if (pendingSeedRef.current.has(activeId)) {
+        pendingSeedRef.current.delete(activeId)
+        note.setText(vault.read(activeId), LOCAL)
+        hydrated = true
+      }
       // Offline-first for a synced room: load the last-synced state from local CRDT
       // persistence so the editor is readable with zero connectivity; the super-peer then
       // merges live edits on top of the same doc via CRDT. The empty-doc guard in persist()
@@ -245,21 +349,33 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     return notes.filter((m) => ids.has(m.id))
   }, [graph, activeMeta, notes])
 
-  const select = useCallback((id: NoteId): void => setActiveId(id), [])
+  const select = useCallback(
+    (id: NoteId): void => {
+      // Materialize a registry-only note (defensive) so the body effect's vault.read never
+      // throws and its empty body rides the sync-mode empty-doc guard until the server fills it.
+      if (!vault.list().some((m) => m.id === id)) {
+        vault.ensure(id, registry.get(id)?.title ?? id)
+      }
+      setActiveId(id)
+    },
+    [vault, registry],
+  )
   const selectByTitle = useCallback(
     (title: string): void => {
-      const target = vault.list().find((m) => m.title === title)
+      const target = unionList().find((m) => m.title === title)
       if (target) setActiveId(target.id)
     },
-    [vault],
+    [unionList],
   )
   const create = useCallback(
     (title: string): void => {
       const meta = vault.create(title, `# ${title}\n`)
-      setNotes(vault.list())
+      pendingSeedRef.current.add(meta.id) // seed this note's body into its synced doc on open
+      registry.set(meta.id, { title }, LOCAL) // propagate the list entry to peers
+      setNotes(unionList())
       setActiveId(meta.id)
     },
-    [vault],
+    [vault, registry, unionList],
   )
 
   const commit = (label?: string): void => {

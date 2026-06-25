@@ -1,7 +1,9 @@
 import type { OnSaveResult, RagAnswer, SuggestionProvider } from "@spherewiki/ai"
+import { openYjsRegistry, type YjsBackedRegistry } from "@spherewiki/shared"
 import { act, renderHook } from "@testing-library/react"
 import { describe, expect, it } from "vitest"
 import { devAuth } from "../auth-dev"
+import type { ConnectRegistry } from "../sync/connect-registry"
 import type { ConnectNote } from "../sync/connect-server"
 import type { ConnectLocalPersistence } from "../sync/local-persistence"
 import { useVaultWorkspace } from "./use-vault-workspace"
@@ -13,6 +15,45 @@ const flush = (): Promise<void> =>
   act(async () => {
     await new Promise((r) => setTimeout(r, 0))
   })
+
+/** A stable no-op body-sync transport (unstable refs would re-run the per-note effect). */
+const noBodySync: ConnectNote = () => () => {}
+
+/**
+ * An in-process registry "super-peer" hub: a single ConnectRegistry that several hooks can
+ * join. A change on any peer (or on `server`, simulating a remote peer) reaches every other
+ * peer — modelling the real Hocuspocus broadcast so the note list can converge in tests.
+ */
+function registryHub(): { connect: ConnectRegistry; server: YjsBackedRegistry } {
+  const server = openYjsRegistry()
+  const peers = new Set<YjsBackedRegistry>()
+  // A server-originated change (a test acting as a remote peer) fans out to all connected peers.
+  server.onUpdate((u, info) => {
+    if (!info.local) return
+    for (const p of peers) p.applyUpdate(u)
+  })
+  const connect: ConnectRegistry = (reg, opts) => {
+    reg.applyUpdate(server.encodeState())
+    peers.add(reg)
+    const off = reg.onUpdate((u, info) => {
+      if (!info.local) return
+      server.applyUpdate(u)
+      for (const p of peers) if (p !== reg) p.applyUpdate(u)
+    })
+    opts.onHydrated()
+    return () => {
+      off()
+      peers.delete(reg)
+    }
+  }
+  return { connect, server }
+}
+
+/** Deterministic, peer-prefixed note ids so two replicas never collide. */
+function ids(prefix: string): () => string {
+  let n = 0
+  return () => `${prefix}-${(++n).toString()}`
+}
 
 describe("useVaultWorkspace", () => {
   it("opens the first note with its outgoing links", () => {
@@ -377,5 +418,100 @@ describe("useVaultWorkspace", () => {
     const second = renderHook(() => useVaultWorkspace(opts))
     expect(second.result.current.activeNote?.getText()).toContain("persisted body")
     second.unmount()
+  })
+
+  it("shows a note a remote peer added to the registry (list converges)", () => {
+    const hub = registryHub()
+    const { result } = renderHook(() =>
+      useVaultWorkspace({ syncUrl: "ws://x", connect: noBodySync, connectRegistry: hub.connect }),
+    )
+    // A remote peer creates a note in the shared registry.
+    act(() =>
+      hub.server.set("remote-1", { title: "Remote Note" }, { actor: "peer", kind: "human" }),
+    )
+    expect(result.current.notes.some((m) => m.id === "remote-1")).toBe(true)
+    expect(result.current.notes.map((m) => m.title)).toContain("Remote Note")
+    hub.server.destroy()
+  })
+
+  it("propagates a locally created note to the shared registry", () => {
+    const hub = registryHub()
+    const { result } = renderHook(() =>
+      useVaultWorkspace({
+        syncUrl: "ws://x",
+        connect: noBodySync,
+        connectRegistry: hub.connect,
+        newNoteId: ids("local"),
+      }),
+    )
+    act(() => result.current.create("Spec"))
+    const titles = [...hub.server.entries().values()].map((e) => e.title)
+    expect(titles).toContain("Spec") // reached the shared registry, so peers will see it
+    hub.server.destroy()
+  })
+
+  it("converges two peers: a note created on A appears on B, with no id collision", () => {
+    const hub = registryHub()
+    const a = renderHook(() =>
+      useVaultWorkspace({
+        syncUrl: "ws://x",
+        connect: noBodySync,
+        connectRegistry: hub.connect,
+        newNoteId: ids("a"),
+      }),
+    )
+    const b = renderHook(() =>
+      useVaultWorkspace({
+        syncUrl: "ws://x",
+        connect: noBodySync,
+        connectRegistry: hub.connect,
+        newNoteId: ids("b"),
+      }),
+    )
+    act(() => a.result.current.create("Spec"))
+    const onB = b.result.current.notes.find((m) => m.title === "Spec")
+    expect(onB).toBeDefined()
+    expect(onB?.id).toBe("a-4") // A's globally-unique id (3 seeds + 1), not one of B's b-* ids
+    // B's own local seeds are untouched (additive, no data loss).
+    expect(b.result.current.notes.map((m) => m.title)).toEqual(
+      expect.arrayContaining(["Home", "Getting Started", "Ideas", "Spec"]),
+    )
+    a.unmount()
+    b.unmount()
+    hub.server.destroy()
+  })
+
+  it("seeds a newly created note's body into its synced doc (creator sees content)", () => {
+    const hub = registryHub()
+    const { result } = renderHook(() =>
+      useVaultWorkspace({ syncUrl: "ws://x", connect: noBodySync, connectRegistry: hub.connect }),
+    )
+    act(() => result.current.create("Spec"))
+    // Despite the body transport never hydrating, the creator's editor shows the new note's
+    // body (seeded from the vault: unique id, single author — not the double-seed case).
+    expect(result.current.activeNote?.getText()).toContain("Spec")
+    hub.server.destroy()
+  })
+
+  it("does not publish local seed notes into the shared registry (no double-seed)", () => {
+    const hub = registryHub()
+    const { unmount } = renderHook(() =>
+      useVaultWorkspace({ syncUrl: "ws://x", connect: noBodySync, connectRegistry: hub.connect }),
+    )
+    // The default Home/Getting Started/Ideas stay local-only; the registry was never bulk-seeded.
+    expect(hub.server.entries().size).toBe(0)
+    unmount()
+    hub.server.destroy()
+  })
+
+  it("keeps local notes when the registry hydrates empty (no data loss)", () => {
+    const connectRegistry: ConnectRegistry = (_reg, opts) => {
+      opts.onHydrated() // authoritative-but-empty registry
+      return () => {}
+    }
+    const { result } = renderHook(() =>
+      useVaultWorkspace({ syncUrl: "ws://x", connect: noBodySync, connectRegistry }),
+    )
+    expect(result.current.notes.map((m) => m.title)).toEqual(["Home", "Getting Started", "Ideas"])
   })
 })

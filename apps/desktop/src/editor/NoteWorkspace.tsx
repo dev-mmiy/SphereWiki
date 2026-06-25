@@ -2,7 +2,9 @@ import type { OnSaveResult } from "@spherewiki/ai"
 import { type AuthProvider, can, type DiffChunk, roleFor } from "@spherewiki/shared"
 import { useState } from "react"
 import { devAuth, WORKSPACE_ID } from "../auth-dev"
+import { connectRegistryToServer } from "../sync/connect-registry"
 import { connectLocalPersistence } from "../sync/local-persistence"
+import { connectRegistryPersistence } from "../sync/registry-persistence"
 import { AskPanel } from "./ask-panel"
 import { DiffView, HistoryPanel } from "./history-panel"
 import { LinksPanel } from "./links-panel"
@@ -34,6 +36,8 @@ export function NoteWorkspace({ auth = devAuth() }: { auth?: AuthProvider }) {
     syncUrl: import.meta.env.VITE_SYNC_URL,
     persistVaultKey: `spherewiki:vault:${WORKSPACE_ID}`,
     localPersistence: connectLocalPersistence,
+    connectRegistry: connectRegistryToServer,
+    registryPersistence: connectRegistryPersistence,
   })
   const [diff, setDiff] = useState<readonly DiffChunk[] | null>(null)
   const [aiStatus, setAiStatus] = useState<string | null>(null)
