@@ -17,12 +17,14 @@ import {
 } from "@spherewiki/ai"
 import {
   asNoteId,
+  buildGraphModel,
   buildLinkGraph,
   buildTagIndex,
   createMemoryVault,
   createMemoryVersionStore,
   type DiffChunk,
   type EditOrigin,
+  type GraphModel,
   type LinkGraph,
   type NoteId,
   type NoteMeta,
@@ -75,6 +77,8 @@ export interface VaultWorkspace {
   readonly activeNote: YjsBackedNote | null
   readonly outgoing: readonly string[]
   readonly backlinks: readonly NoteMeta[]
+  /** Node/edge model of the whole workspace's notes and their wikilinks — the basic graph view. */
+  readonly graph: GraphModel
   /** The active note's tags, read from its frontmatter (derived from Markdown). */
   readonly tags: readonly string[]
   /** Visible notes carrying a given tag — for tag-based navigation (workspace-scoped). */
@@ -418,6 +422,10 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     return notes.filter((m) => ids.has(m.id))
   }, [graph, activeMeta, notes])
 
+  // The whole-workspace graph model (nodes = visible notes, edges = resolved wikilinks),
+  // derived from the same link graph + note list so it tracks every body/title change.
+  const graphModel = useMemo<GraphModel>(() => buildGraphModel(notes, graph), [notes, graph])
+
   // The active note's tags (from its frontmatter), and the visible notes carrying a given tag —
   // both derived from the workspace's own Markdown, so tag navigation can never cross workspaces.
   const tags = useMemo<readonly string[]>(
@@ -611,6 +619,7 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     activeNote,
     outgoing,
     backlinks,
+    graph: graphModel,
     tags,
     notesForTag,
     versions,

@@ -72,6 +72,32 @@ describe("useVaultWorkspace", () => {
     ])
   })
 
+  it("exposes a whole-workspace graph of notes and resolved wikilinks", () => {
+    const { result } = renderHook(() => useVaultWorkspace())
+    const { nodes, edges } = result.current.graph
+    expect(nodes.map((n) => n.title).sort()).toEqual(["Getting Started", "Home", "Ideas"])
+    // Edges resolve titles to ids; assert by title for readability.
+    const titleOf = new Map(nodes.map((n) => [n.id, n.title]))
+    const byTitle = edges.map((e) => `${titleOf.get(e.from)}->${titleOf.get(e.to)}`).sort()
+    expect(byTitle).toEqual([
+      "Getting Started->Home",
+      "Home->Getting Started",
+      "Home->Ideas",
+      "Ideas->Home",
+    ])
+  })
+
+  it("keeps the graph in step as the active note's links change", () => {
+    const { result } = renderHook(() => useVaultWorkspace())
+    const homeId = result.current.activeId
+    act(() => result.current.activeNote?.setText("# Home\n\nnow isolated\n", LOCAL))
+    const edgesFromHome = result.current.graph.edges.filter((e) => e.from === homeId)
+    expect(edgesFromHome).toEqual([]) // Home no longer links out
+    // Home is still a node, and its backlinks (Getting Started, Ideas) still point at it.
+    expect(result.current.graph.nodes.some((n) => n.id === homeId)).toBe(true)
+    expect(result.current.graph.edges.some((e) => e.to === homeId)).toBe(true)
+  })
+
   it("exposes the active note's tags from its frontmatter", () => {
     const { result } = renderHook(() => useVaultWorkspace())
     expect(result.current.tags).toEqual([]) // seed Home has no frontmatter

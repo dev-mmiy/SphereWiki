@@ -1,11 +1,12 @@
 import type { OnSaveResult } from "@spherewiki/ai"
-import { type AuthProvider, can, type DiffChunk, roleFor } from "@spherewiki/shared"
+import { type AuthProvider, asNoteId, can, type DiffChunk, roleFor } from "@spherewiki/shared"
 import { useState } from "react"
 import { devAuth, WORKSPACE_ID } from "../auth-dev"
 import { connectRegistryToServer } from "../sync/connect-registry"
 import { connectLocalPersistence } from "../sync/local-persistence"
 import { connectRegistryPersistence } from "../sync/registry-persistence"
 import { AskPanel } from "./ask-panel"
+import { GraphView } from "./graph-view"
 import { DiffView, HistoryPanel } from "./history-panel"
 import { LinksPanel } from "./links-panel"
 import { NoteEditor } from "./NoteEditor"
@@ -113,6 +114,16 @@ export function NoteWorkspace({ auth = devAuth() }: { auth?: AuthProvider }) {
           clearDiff()
           setAiStatus(null)
           ws.select(id)
+        }}
+      />
+      <GraphView
+        nodes={ws.graph.nodes}
+        edges={ws.graph.edges}
+        activeId={ws.activeId}
+        onNavigate={(id) => {
+          clearDiff()
+          setAiStatus(null)
+          ws.select(asNoteId(id))
         }}
       />
       <HistoryPanel

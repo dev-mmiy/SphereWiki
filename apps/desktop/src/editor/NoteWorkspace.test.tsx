@@ -69,6 +69,23 @@ describe("NoteWorkspace", () => {
     expect(chips.length).toBeGreaterThan(0)
   })
 
+  it("renders the workspace graph and navigates by clicking a node", () => {
+    render(<NoteWorkspace />)
+    const graph = screen.getByRole("region", { name: "Graph" })
+    // Home is active initially, so its node is marked current.
+    expect(
+      within(graph).getByRole("button", { name: "Open Home" }).getAttribute("aria-current"),
+    ).toBe("true")
+    // Clicking the Ideas node navigates: the current marker moves to it.
+    fireEvent.click(within(graph).getByRole("button", { name: "Open Ideas" }))
+    expect(
+      within(graph).getByRole("button", { name: "Open Ideas" }).getAttribute("aria-current"),
+    ).toBe("true")
+    expect(
+      within(graph).getByRole("button", { name: "Open Home" }).getAttribute("aria-current"),
+    ).toBeNull()
+  })
+
   it("answers a workspace question with cited notes (RAG)", async () => {
     render(<NoteWorkspace auth={devAuth("editor")} />)
     fireEvent.change(screen.getByLabelText(/ask the workspace/i), {

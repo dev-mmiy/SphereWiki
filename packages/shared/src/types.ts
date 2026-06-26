@@ -49,3 +49,27 @@ export interface TagIndex {
   /** note id -> its tags, in document order */
   readonly byNote: ReadonlyMap<string, readonly string[]>
 }
+
+/** One note in the graph view. */
+export interface GraphNode {
+  readonly id: string
+  readonly title: string
+}
+
+/** A directed note→note connection: a `[[wikilink]]` whose target title resolved to a real note. */
+export interface GraphEdge {
+  /** source note id */
+  readonly from: string
+  /** target note id */
+  readonly to: string
+}
+
+/**
+ * A renderable node/edge model of a workspace's notes and their wikilink relationships
+ * (the "basic graph view"). Derived from Markdown — rebuildable, and workspace-scoped by
+ * construction (it only ever contains the notes handed to `buildGraphModel`).
+ */
+export interface GraphModel {
+  readonly nodes: readonly GraphNode[]
+  readonly edges: readonly GraphEdge[]
+}
