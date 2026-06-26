@@ -60,7 +60,32 @@ describe("useVaultWorkspace", () => {
     const { result } = renderHook(() => useVaultWorkspace())
     expect(result.current.notes.map((m) => m.title)).toEqual(["Home", "Getting Started", "Ideas"])
     expect(result.current.activeNote?.getText()).toContain("Welcome")
-    expect(result.current.outgoing).toEqual(expect.arrayContaining(["Getting Started", "Ideas"]))
+    expect(result.current.outgoing.map((l) => l.title)).toEqual(
+      expect.arrayContaining(["Getting Started", "Ideas"]),
+    )
+  })
+
+  it("flags outgoing links as resolved or dangling", () => {
+    const { result } = renderHook(() => useVaultWorkspace())
+    // Home's seed links both resolve to existing notes.
+    expect(result.current.outgoing.every((l) => l.exists)).toBe(true)
+    // Add a link to a note that doesn't exist → it shows up as dangling.
+    act(() => result.current.activeNote?.setText("# Home\n\nsee [[Nowhere]]\n", LOCAL))
+    expect(result.current.outgoing).toEqual([{ title: "Nowhere", exists: false }])
+  })
+
+  it("creating a dangling link's note resolves the link (graph gains the edge)", () => {
+    const { result } = renderHook(() => useVaultWorkspace())
+    const homeId = result.current.activeId
+    act(() => result.current.activeNote?.setText("# Home\n\nsee [[Nowhere]]\n", LOCAL))
+    expect(result.current.outgoing).toEqual([{ title: "Nowhere", exists: false }])
+
+    act(() => result.current.create("Nowhere"))
+
+    // The note now exists and Home's previously-dangling link resolves to it.
+    const nowhere = result.current.notes.find((m) => m.title === "Nowhere")
+    expect(nowhere).toBeDefined()
+    expect(result.current.graph.edges).toContainEqual({ from: homeId, to: nowhere?.id })
   })
 
   it("computes backlinks for the active note", () => {
@@ -328,7 +353,9 @@ describe("useVaultWorkspace", () => {
     })
     // The un-hydrated cleanup must not have overwritten Home's Markdown with "" —
     // its outgoing links (derived from the vault body) are still intact.
-    expect(result.current.outgoing).toEqual(expect.arrayContaining(["Getting Started", "Ideas"]))
+    expect(result.current.outgoing.map((l) => l.title)).toEqual(
+      expect.arrayContaining(["Getting Started", "Ideas"]),
+    )
   })
 
   it("reads a synced room offline from local CRDT persistence (no server needed)", async () => {
@@ -399,7 +426,9 @@ describe("useVaultWorkspace", () => {
     })
     await flush()
     // The vault's Markdown was never overwritten with the empty pre-sync doc.
-    expect(result.current.outgoing).toEqual(expect.arrayContaining(["Getting Started", "Ideas"]))
+    expect(result.current.outgoing.map((l) => l.title)).toEqual(
+      expect.arrayContaining(["Getting Started", "Ideas"]),
+    )
   })
 
   it("never clobbers the vault when the server hydrates an empty room", async () => {
@@ -418,7 +447,9 @@ describe("useVaultWorkspace", () => {
     )
     await flush()
     // Home's Markdown — and its derived outgoing links — survived the empty authoritative sync.
-    expect(result.current.outgoing).toEqual(expect.arrayContaining(["Getting Started", "Ideas"]))
+    expect(result.current.outgoing.map((l) => l.title)).toEqual(
+      expect.arrayContaining(["Getting Started", "Ideas"]),
+    )
   })
 
   it("persists the first edit to a synced room that hydrated empty (offline-first create)", async () => {
@@ -437,7 +468,7 @@ describe("useVaultWorkspace", () => {
     act(() => result.current.activeNote?.setText("# Home\n\nonly [[Ideas]] now\n", LOCAL))
     // The first real edit reached the vault (non-empty, so the sync-mode guard allows it):
     // the graph, derived from the vault body, now reflects the edit rather than the seed.
-    expect(result.current.outgoing).toEqual(["Ideas"])
+    expect(result.current.outgoing.map((l) => l.title)).toEqual(["Ideas"])
   })
 
   it("disconnects the server provider on note switch and on unmount", async () => {
@@ -658,8 +689,8 @@ describe("useVaultWorkspace", () => {
     // The active note (Home) was repointed live: it links to Concepts, not the dangling Ideas.
     expect(result.current.activeNote?.getText()).toContain("[[Concepts]]")
     expect(result.current.activeNote?.getText()).not.toContain("[[Ideas]]")
-    expect(result.current.outgoing).toContain("Concepts")
-    expect(result.current.outgoing).not.toContain("Ideas")
+    expect(result.current.outgoing.map((l) => l.title)).toContain("Concepts")
+    expect(result.current.outgoing.map((l) => l.title)).not.toContain("Ideas")
 
     // The renamed note's backlinks still resolve under the new title.
     act(() => result.current.select(ideas.id))

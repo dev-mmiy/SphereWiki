@@ -108,10 +108,16 @@ export function NoteWorkspace({ auth = devAuth() }: { auth?: AuthProvider }) {
       <LinksPanel
         outgoing={ws.outgoing}
         backlinks={ws.backlinks}
+        canCreate={canWrite}
         onNavigate={(title) => {
           clearDiff()
           setAiStatus(null)
           ws.selectByTitle(title)
+        }}
+        onCreate={(title) => {
+          clearDiff()
+          setAiStatus(null)
+          ws.create(title)
         }}
       />
       <TagsPanel

@@ -74,11 +74,18 @@ function computeTags(vault: Vault): TagIndex {
   return buildTagIndex(vault.list().map((m) => ({ id: m.id, body: vault.read(m.id) })))
 }
 
+/** One outgoing `[[wikilink]]` from the active note, with whether its target note exists. */
+export interface OutgoingLink {
+  readonly title: string
+  /** True when a visible note carries this title; false for a dangling ("red") link. */
+  readonly exists: boolean
+}
+
 export interface VaultWorkspace {
   readonly notes: readonly NoteMeta[]
   readonly activeId: NoteId
   readonly activeNote: YjsBackedNote | null
-  readonly outgoing: readonly string[]
+  readonly outgoing: readonly OutgoingLink[]
   readonly backlinks: readonly NoteMeta[]
   /** Node/edge model of the whole workspace's notes and their wikilinks — the basic graph view. */
   readonly graph: GraphModel
@@ -417,10 +424,13 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
       : null
 
   const activeMeta = useMemo(() => notes.find((m) => m.id === activeId), [notes, activeId])
-  const outgoing = useMemo<readonly string[]>(
-    () => [...(graph.outgoing.get(activeId) ?? [])],
-    [graph, activeId],
-  )
+  // The active note's outgoing links, each flagged as resolved or dangling (a `[[red link]]`
+  // whose target note doesn't exist yet) so the UI can offer to create the missing note.
+  const outgoing = useMemo<readonly OutgoingLink[]>(() => {
+    const titles = graph.outgoing.get(activeId) ?? new Set<string>()
+    const existing = new Set(notes.map((m) => m.title))
+    return [...titles].map((title) => ({ title, exists: existing.has(title) }))
+  }, [graph, activeId, notes])
   const backlinks = useMemo<readonly NoteMeta[]>(() => {
     if (activeMeta === undefined) return []
     const ids = graph.backlinks.get(activeMeta.title) ?? new Set<string>()
