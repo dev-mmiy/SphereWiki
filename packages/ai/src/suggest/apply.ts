@@ -1,4 +1,4 @@
-import { extractWikiLinks, parseNote, stringifyNote } from "@spherewiki/shared"
+import { addNoteTag, extractWikiLinks, withNoteBody } from "@spherewiki/shared"
 import type { LinkSuggestion, TagSuggestion } from "./types"
 
 /**
@@ -47,22 +47,16 @@ export function applyLinkSuggestions(body: string, links: readonly LinkSuggestio
   return result
 }
 
-function normalizeTags(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((t): t is string => typeof t === "string") : []
-}
-
 /**
- * Merge tag suggestions into frontmatter `tags`, de-duplicating and preserving
- * order. Returns the input verbatim when nothing new is added (byte-preserving).
+ * Merge tag suggestions into frontmatter `tags`, de-duplicating and preserving order. Delegates
+ * to the shared `addNoteTag`, so the edit is *surgical* — only the `tags` sequence is touched and
+ * sibling keys, their scalar token forms, and comments are preserved (no whole-frontmatter
+ * re-serialize). Idempotent and byte-preserving when nothing new is added.
  */
 export function applyTagSuggestions(source: string, tags: readonly TagSuggestion[]): string {
-  if (tags.length === 0) return source
-  const parsed = parseNote(source)
-  const existing = normalizeTags(parsed.frontmatter.tags)
-  const merged = [...existing]
-  for (const t of tags) if (!merged.includes(t.tag)) merged.push(t.tag)
-  if (merged.length === existing.length) return source
-  return stringifyNote({ frontmatter: { ...parsed.frontmatter, tags: merged }, body: parsed.body })
+  let result = source
+  for (const t of tags) result = addNoteTag(result, t.tag)
+  return result
 }
 
 /** Compose link suggestions (into the body) and tag suggestions (into frontmatter). */
@@ -70,11 +64,8 @@ export function buildAgentEdit(
   source: string,
   suggestions: { links: readonly LinkSuggestion[]; tags: readonly TagSuggestion[] },
 ): string {
-  const parsed = parseNote(source)
-  const nextBody = applyLinkSuggestions(parsed.body, suggestions.links)
-  const withLinks =
-    nextBody === parsed.body
-      ? source
-      : stringifyNote({ frontmatter: parsed.frontmatter, body: nextBody })
+  // Apply links to the body only, preserving the frontmatter text verbatim (a full re-serialize
+  // would canonicalize sibling scalars / drop comments — silently mutating human frontmatter).
+  const withLinks = withNoteBody(source, (body) => applyLinkSuggestions(body, suggestions.links))
   return applyTagSuggestions(withLinks, suggestions.tags)
 }

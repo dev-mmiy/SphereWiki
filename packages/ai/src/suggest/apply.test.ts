@@ -75,4 +75,13 @@ describe("buildAgentEdit", () => {
     const once = buildAgentEdit(src, { links: [link("Ideas")], tags: [tag("topic")] })
     expect(buildAgentEdit(once, { links: [link("Ideas")], tags: [tag("topic")] })).toBe(once)
   })
+
+  it("preserves unrelated frontmatter when adding a link and a tag", () => {
+    const src = "---\nversion: 1.0\nnote: hi # keep me\ntags:\n  - a\n---\nSee Ideas.\n"
+    const out = buildAgentEdit(src, { links: [link("Ideas")], tags: [tag("b")] })
+    expect(out).toContain("version: 1.0") // a full re-serialize would canonicalize this to `1`
+    expect(out).toContain("# keep me") // comment survives
+    expect(parseNote(out).body).toContain("[[Ideas]]")
+    expect(parseNote(out).frontmatter.tags).toEqual(["a", "b"])
+  })
 })

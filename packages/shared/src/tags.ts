@@ -1,28 +1,8 @@
 import { Document, isScalar, isSeq, type Node, parseDocument, type YAMLSeq } from "yaml"
-import { parseNote } from "./frontmatter"
+import { parseNote, splitFrontmatter } from "./frontmatter"
 import type { TagIndex } from "./types"
 
 const DELIMITER = "---"
-
-/**
- * Split a note into its raw frontmatter YAML text and body, mirroring `parseNote`'s recognition
- * (first line exactly `---`, a later line exactly `---`). Returns `yaml: null` when there is no
- * frontmatter. Unlike `parseNote` this keeps the YAML as *text* so a surgical edit can preserve
- * every byte we don't touch (sibling keys, comments, scalar token forms).
- */
-function splitFrontmatter(source: string): { yaml: string | null; body: string } {
-  const lines = source.split("\n")
-  if (lines[0] !== DELIMITER) return { yaml: null, body: source }
-  let close = -1
-  for (let i = 1; i < lines.length; i++) {
-    if (lines[i] === DELIMITER) {
-      close = i
-      break
-    }
-  }
-  if (close === -1) return { yaml: null, body: source } // unterminated — not frontmatter
-  return { yaml: lines.slice(1, close).join("\n"), body: lines.slice(close + 1).join("\n") }
-}
 
 /** Reassemble a frontmatter Document (already serialized, trailing newline) with the body. */
 function joinFrontmatter(yamlText: string, body: string): string {
