@@ -16,6 +16,7 @@ import {
   type VectorIndex,
 } from "@spherewiki/ai"
 import {
+  addNoteTag,
   asNoteId,
   buildGraphModel,
   buildLinkGraph,
@@ -33,6 +34,7 @@ import {
   openYjsRegistry,
   parseNote,
   type RegistryEntry,
+  removeNoteTag,
   renameWikiLinkTargets,
   type SearchHit,
   type Session,
@@ -85,6 +87,8 @@ export interface VaultWorkspace {
   readonly notes: readonly NoteMeta[]
   readonly activeId: NoteId
   readonly activeNote: YjsBackedNote | null
+  /** True once the active note's authoritative state has loaded (always true in no-sync mode). */
+  readonly hydrated: boolean
   readonly outgoing: readonly OutgoingLink[]
   readonly backlinks: readonly NoteMeta[]
   /** Node/edge model of the whole workspace's notes and their wikilinks — the basic graph view. */
@@ -93,6 +97,10 @@ export interface VaultWorkspace {
   readonly tags: readonly string[]
   /** Visible notes carrying a given tag — for tag-based navigation (workspace-scoped). */
   notesForTag: (tag: string) => readonly NoteMeta[]
+  /** Add a tag to the active note's frontmatter (a human edit, via the CRDT doc; revertible). */
+  addTag: (tag: string) => void
+  /** Remove a tag from the active note's frontmatter (via the CRDT doc; revertible). */
+  removeTag: (tag: string) => void
   /** Full-text search over the visible notes (title + body + tags); ranked, workspace-scoped. */
   search: (query: string) => readonly SearchHit[]
   readonly versions: readonly Version[]
@@ -233,6 +241,11 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     return first.id
   })
   const [active, setActive] = useState<{ id: NoteId; note: YjsBackedNote } | null>(null)
+  // True once the active note's authoritative state has loaded. In no-sync mode it flips
+  // synchronously (the doc is seeded from the vault); in sync mode it waits for the local cache
+  // or super-peer, so edits made in that window can't write into a doc the server body will later
+  // merge AFTER (which would push frontmatter out of line 0 and corrupt the note).
+  const [hydrated, setHydrated] = useState(false)
   const [graph, setGraph] = useState<LinkGraph>(() => computeGraph(vault))
   // The tag index mirrors `graph`: both are derived from the vault's Markdown and recomputed
   // imperatively in lockstep on every body change (a memo can't observe non-state body edits).
@@ -346,6 +359,7 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     const note = openYjsNote()
     const syncing = syncUrl !== undefined
     let disposed = false
+    setHydrated(false) // reset for this note; flips true below once authoritative state loads
     // In sync mode the CRDT (local cache + super-peer) is authoritative and the Markdown
     // vault is its offline-readable cache: never write an EMPTY doc back to the vault, or a
     // pre-sync doc, a fast note switch, or a brand-new empty room would clobber real Markdown.
@@ -361,9 +375,13 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     // state has arrived (local cache loaded or server synced) — even if that state is empty,
     // in which case persist() simply no-ops until the first real content appears.
     let hydrated = false
+    const becomeHydrated = (): void => {
+      hydrated = true
+      if (!disposed) setHydrated(true) // mirror to state so the UI/edit guards can gate on it
+    }
     const markHydrated = (): void => {
       if (disposed || hydrated) return
-      hydrated = true
+      becomeHydrated()
       persist()
     }
 
@@ -379,7 +397,7 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
       if (pendingSeedRef.current.has(activeId)) {
         pendingSeedRef.current.delete(activeId)
         note.setText(vault.read(activeId), LOCAL)
-        hydrated = true
+        becomeHydrated()
       }
       // Offline-first for a synced room: load the last-synced state from local CRDT
       // persistence so the editor is readable with zero connectivity; the super-peer then
@@ -395,7 +413,7 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
       disconnect = connect(note, { url: syncUrl, room, onHydrated: markHydrated })
     } else {
       note.setText(vault.read(activeId), LOCAL)
-      hydrated = true
+      becomeHydrated()
     }
 
     const off = note.subscribe(() => {
@@ -456,6 +474,30 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
       return ids === undefined ? [] : notes.filter((m) => ids.has(m.id))
     },
     [tagIndex, notes],
+  )
+
+  // Human tag curation: edit the active note's frontmatter through its CRDT doc, so the change
+  // is attributed, synced, and revertible like any body edit — and the note's subscribe-writer
+  // recomputes the tag index, so the panel updates. People and AI co-edit the same tags.
+  // Guard on `hydrated`: editing the frontmatter of a not-yet-hydrated synced doc would write a
+  // tags block the server body later merges after, corrupting the note — so no-op until ready.
+  const addTag = useCallback(
+    (tag: string): void => {
+      if (activeNote === null || !hydrated) return
+      const body = activeNote.getText()
+      const next = addNoteTag(body, tag)
+      if (next !== body) activeNote.setText(next, LOCAL)
+    },
+    [activeNote, hydrated],
+  )
+  const removeTag = useCallback(
+    (tag: string): void => {
+      if (activeNote === null || !hydrated) return
+      const body = activeNote.getText()
+      const next = removeNoteTag(body, tag)
+      if (next !== body) activeNote.setText(next, LOCAL)
+    },
+    [activeNote, hydrated],
   )
 
   // Full-text search. Built on demand over the *visible* notes only (so trashed notes never
@@ -667,11 +709,14 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     notes,
     activeId,
     activeNote,
+    hydrated,
     outgoing,
     backlinks,
     graph: graphModel,
     tags,
     notesForTag,
+    addTag,
+    removeTag,
     search,
     versions,
     deleted,

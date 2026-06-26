@@ -69,6 +69,21 @@ describe("NoteWorkspace", () => {
     expect(chips.length).toBeGreaterThan(0)
   })
 
+  it("lets an editor add a tag from the Tags panel (human + AI co-edit tags)", () => {
+    render(<NoteWorkspace auth={devAuth("editor")} />)
+    const tagsRegion = screen.getByRole("region", { name: "Tags" })
+    const input = within(tagsRegion).getByRole("textbox", { name: "Add tag" })
+    fireEvent.change(input, { target: { value: "planning" } })
+    fireEvent.submit(input.closest("form") as HTMLFormElement)
+    expect(within(tagsRegion).getByRole("button", { name: "#planning" })).toBeTruthy()
+  })
+
+  it("hides tag editing for a viewer", () => {
+    render(<NoteWorkspace auth={devAuth("viewer")} />)
+    const tagsRegion = screen.getByRole("region", { name: "Tags" })
+    expect(within(tagsRegion).queryByRole("textbox", { name: "Add tag" })).toBeNull()
+  })
+
   it("renders the workspace graph and navigates by clicking a node", () => {
     render(<NoteWorkspace />)
     const graph = screen.getByRole("region", { name: "Graph" })

@@ -176,6 +176,42 @@ describe("useVaultWorkspace", () => {
     expect(result.current.tags).toEqual(["planning", "ideas"])
   })
 
+  it("adds and removes tags on the active note (human tag curation)", () => {
+    const { result } = renderHook(() => useVaultWorkspace())
+    expect(result.current.tags).toEqual([])
+    act(() => result.current.addTag("planning"))
+    expect(result.current.tags).toEqual(["planning"])
+    act(() => result.current.addTag("planning")) // idempotent — no duplicate
+    act(() => result.current.addTag("ideas"))
+    expect(result.current.tags).toEqual(["planning", "ideas"])
+    act(() => result.current.removeTag("planning"))
+    expect(result.current.tags).toEqual(["ideas"])
+    // The edit rides the note's CRDT doc — it's a normal versioned/synced body edit.
+    expect(result.current.activeNote?.getText()).toContain("ideas")
+  })
+
+  it("refuses a tag edit until a synced note hydrates (no pre-hydration frontmatter write)", () => {
+    const connect: ConnectNote = () => () => {} // connects but never hydrates
+    const { result } = renderHook(() => useVaultWorkspace({ syncUrl: "ws://x", connect }))
+    expect(result.current.hydrated).toBe(false)
+    act(() => result.current.addTag("planning"))
+    // No-op: tags unchanged AND no frontmatter block was written into the (unhydrated) doc —
+    // a later server-body merge would otherwise push it out of line 0 and corrupt the note.
+    expect(result.current.tags).toEqual([])
+    expect(result.current.activeNote?.getText() ?? "").not.toContain("tags:")
+  })
+
+  it("allows tag edits once a synced note hydrates", () => {
+    const connect: ConnectNote = (_note, opts) => {
+      opts.onHydrated()
+      return () => {}
+    }
+    const { result } = renderHook(() => useVaultWorkspace({ syncUrl: "ws://x", connect }))
+    expect(result.current.hydrated).toBe(true)
+    act(() => result.current.addTag("planning"))
+    expect(result.current.tags).toEqual(["planning"])
+  })
+
   it("surfaces AI-added tags (auto-tag becomes visible)", async () => {
     const { result } = renderHook(() => useVaultWorkspace())
     const session = devAuth("editor").session()

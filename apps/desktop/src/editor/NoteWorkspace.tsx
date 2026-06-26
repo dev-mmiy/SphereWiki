@@ -124,11 +124,22 @@ export function NoteWorkspace({ auth = devAuth() }: { auth?: AuthProvider }) {
         key={ws.activeId}
         tags={ws.tags}
         activeId={ws.activeId}
+        canEdit={canWrite && ws.activeNote !== null && ws.hydrated}
         notesForTag={ws.notesForTag}
         onNavigate={(id) => {
           clearDiff()
           setAiStatus(null)
           ws.select(id)
+        }}
+        onAddTag={(tag) => {
+          clearDiff()
+          setAiStatus(null)
+          ws.addTag(tag)
+        }}
+        onRemoveTag={(tag) => {
+          clearDiff()
+          setAiStatus(null)
+          ws.removeTag(tag)
         }}
       />
       <GraphView

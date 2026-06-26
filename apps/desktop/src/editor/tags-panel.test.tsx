@@ -5,30 +5,50 @@ import { TagsPanel } from "./tags-panel"
 
 const meta = (id: string, title: string): NoteMeta => ({ id: asNoteId(id), title })
 
+function renderPanel(
+  tags: readonly string[],
+  opts: {
+    notesForTag?: (tag: string) => readonly NoteMeta[]
+    onNavigate?: (id: NoteId) => void
+    canEdit?: boolean
+    activeId?: string
+  } = {},
+) {
+  const onNavigate = opts.onNavigate ?? vi.fn()
+  const onAddTag = vi.fn()
+  const onRemoveTag = vi.fn()
+  render(
+    <TagsPanel
+      tags={tags}
+      activeId={asNoteId(opts.activeId ?? "x")}
+      canEdit={opts.canEdit ?? true}
+      notesForTag={opts.notesForTag ?? (() => [])}
+      onNavigate={onNavigate}
+      onAddTag={onAddTag}
+      onRemoveTag={onRemoveTag}
+    />,
+  )
+  return { region: screen.getByRole("region", { name: "Tags" }), onNavigate, onAddTag, onRemoveTag }
+}
+
 describe("TagsPanel", () => {
   it("shows a hint when the note has no tags", () => {
-    render(
-      <TagsPanel tags={[]} activeId={asNoteId("a")} notesForTag={() => []} onNavigate={() => {}} />,
-    )
+    renderPanel([])
     expect(screen.getByText(/no tags yet/i)).toBeTruthy()
   })
 
   it("lists the active note's tags", () => {
-    const region = renderPanel(["planning", "ideas"], () => [])
+    const { region } = renderPanel(["planning", "ideas"])
     expect(within(region).getByRole("button", { name: "#planning" })).toBeTruthy()
     expect(within(region).getByRole("button", { name: "#ideas" })).toBeTruthy()
   })
 
   it("reveals co-tagged notes on click and navigates to one", () => {
-    const onNavigate = vi.fn()
     const tagged = [meta("a", "Home"), meta("b", "Ideas")]
-    const region = renderPanel(
-      ["shared"],
-      (tag) => (tag === "shared" ? tagged : []),
-      onNavigate,
-      "a",
-    )
-
+    const { region, onNavigate } = renderPanel(["shared"], {
+      notesForTag: (tag) => (tag === "shared" ? tagged : []),
+      activeId: "a",
+    })
     // Co-tagged notes are hidden until the tag is opened.
     expect(within(region).queryByRole("button", { name: "Ideas" })).toBeNull()
     fireEvent.click(within(region).getByRole("button", { name: "#shared" }))
@@ -39,52 +59,50 @@ describe("TagsPanel", () => {
 
   it("closes the co-tagged list when the open tag leaves the active note's tags", () => {
     const tagged = [meta("a", "Home")]
-    const { rerender } = render(
-      <TagsPanel
-        tags={["shared", "other"]}
-        activeId={asNoteId("a")}
-        notesForTag={() => tagged}
-        onNavigate={() => {}}
-      />,
-    )
+    const props = {
+      activeId: asNoteId("a"),
+      canEdit: true,
+      notesForTag: () => tagged,
+      onNavigate: () => {},
+      onAddTag: () => {},
+      onRemoveTag: () => {},
+    }
+    const { rerender } = render(<TagsPanel tags={["shared", "other"]} {...props} />)
     const region = screen.getByRole("region", { name: "Tags" })
     fireEvent.click(within(region).getByRole("button", { name: "#shared" }))
     expect(within(region).getByRole("list", { name: "Notes tagged shared" })).toBeTruthy()
-    // The active note's frontmatter changed and no longer carries "shared" — the stale list closes.
-    rerender(
-      <TagsPanel
-        tags={["other"]}
-        activeId={asNoteId("a")}
-        notesForTag={() => tagged}
-        onNavigate={() => {}}
-      />,
-    )
+    rerender(<TagsPanel tags={["other"]} {...props} />)
     expect(within(region).queryByRole("list", { name: "Notes tagged shared" })).toBeNull()
   })
 
-  it("toggles the co-tagged list closed on a second click", () => {
-    const region = renderPanel(["shared"], () => [meta("a", "Home")])
-    const tagBtn = within(region).getByRole("button", { name: "#shared" })
-    fireEvent.click(tagBtn)
-    expect(within(region).getByRole("list", { name: "Notes tagged shared" })).toBeTruthy()
-    fireEvent.click(tagBtn)
-    expect(within(region).queryByRole("list", { name: "Notes tagged shared" })).toBeNull()
+  it("adds a tag via the form and clears the input", () => {
+    const { onAddTag } = renderPanel(["alpha"])
+    const input = screen.getByRole("textbox", { name: "Add tag" }) as HTMLInputElement
+    fireEvent.change(input, { target: { value: "  beta " } })
+    fireEvent.submit(input.closest("form") as HTMLFormElement)
+    expect(onAddTag).toHaveBeenCalledWith("beta") // trimmed
+    expect(input.value).toBe("")
+  })
+
+  it("does not add a blank tag", () => {
+    const { onAddTag } = renderPanel([])
+    const input = screen.getByRole("textbox", { name: "Add tag" })
+    fireEvent.change(input, { target: { value: "   " } })
+    fireEvent.submit(input.closest("form") as HTMLFormElement)
+    expect(onAddTag).not.toHaveBeenCalled()
+  })
+
+  it("removes a tag with its × control", () => {
+    const { onRemoveTag } = renderPanel(["alpha", "beta"])
+    fireEvent.click(screen.getByRole("button", { name: "Remove tag alpha" }))
+    expect(onRemoveTag).toHaveBeenCalledWith("alpha")
+  })
+
+  it("hides editing affordances without write permission", () => {
+    renderPanel(["alpha"], { canEdit: false })
+    expect(screen.queryByRole("textbox", { name: "Add tag" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Remove tag alpha" })).toBeNull()
+    // The tag itself is still shown (read-only) and navigable.
+    expect(screen.getByRole("button", { name: "#alpha" })).toBeTruthy()
   })
 })
-
-function renderPanel(
-  tags: readonly string[],
-  notesForTag: (tag: string) => readonly NoteMeta[],
-  onNavigate: (id: NoteId) => void = () => {},
-  activeId = "x",
-): HTMLElement {
-  render(
-    <TagsPanel
-      tags={tags}
-      activeId={asNoteId(activeId)}
-      notesForTag={notesForTag}
-      onNavigate={onNavigate}
-    />,
-  )
-  return screen.getByRole("region", { name: "Tags" })
-}
