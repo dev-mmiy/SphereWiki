@@ -19,6 +19,7 @@ import {
   asNoteId,
   buildGraphModel,
   buildLinkGraph,
+  buildSearchIndex,
   buildTagIndex,
   createMemoryVault,
   createMemoryVersionStore,
@@ -33,7 +34,9 @@ import {
   parseNote,
   type RegistryEntry,
   renameWikiLinkTargets,
+  type SearchHit,
   type Session,
+  searchNotes,
   type TagIndex,
   textDiff,
   type Vault,
@@ -83,6 +86,8 @@ export interface VaultWorkspace {
   readonly tags: readonly string[]
   /** Visible notes carrying a given tag — for tag-based navigation (workspace-scoped). */
   notesForTag: (tag: string) => readonly NoteMeta[]
+  /** Full-text search over the visible notes (title + body + tags); ranked, workspace-scoped. */
+  search: (query: string) => readonly SearchHit[]
   readonly versions: readonly Version[]
   /** Tombstoned notes still recoverable locally (the "trash"). */
   readonly deleted: readonly NoteMeta[]
@@ -440,6 +445,21 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     [tagIndex, notes],
   )
 
+  // Full-text search. Built on demand over the *visible* notes only (so trashed notes never
+  // surface and a search can't cross workspaces), straight from the Markdown — the deterministic
+  // rebuild entrypoint the idempotency invariant relies on. Cheap at MVP scale; DuckDB FTS
+  // replaces the in-memory index at M2b behind the same `buildSearchIndex`/`searchNotes` seam.
+  const search = useCallback(
+    (query: string): readonly SearchHit[] => {
+      if (query.trim() === "") return []
+      const index = buildSearchIndex(
+        notes.map((m) => ({ id: m.id, title: m.title, body: vault.read(m.id) })),
+      )
+      return searchNotes(index, query)
+    },
+    [notes, vault],
+  )
+
   const select = useCallback(
     (id: NoteId): void => {
       // Materialize a registry-only note (defensive) so the body effect's vault.read never
@@ -622,6 +642,7 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     graph: graphModel,
     tags,
     notesForTag,
+    search,
     versions,
     deleted,
     select,

@@ -73,3 +73,28 @@ export interface GraphModel {
   readonly nodes: readonly GraphNode[]
   readonly edges: readonly GraphEdge[]
 }
+
+/** One note's searchable terms (derived from its title, body, and tags). */
+export interface SearchIndexEntry {
+  readonly title: string
+  /** body + tag term -> occurrence count */
+  readonly terms: ReadonlyMap<string, number>
+  /** distinct title terms (matches here are boosted) */
+  readonly titleTerms: ReadonlySet<string>
+}
+
+/**
+ * A derived full-text index for a set of notes. Rebuildable from Markdown alone and
+ * workspace-scoped by construction (only the notes handed to `buildSearchIndex`). The
+ * in-memory implementation backs the desktop today; DuckDB FTS slots in behind it at M2b.
+ */
+export interface SearchIndex {
+  readonly byNote: ReadonlyMap<string, SearchIndexEntry>
+}
+
+/** One ranked search result. */
+export interface SearchHit {
+  readonly id: string
+  readonly title: string
+  readonly score: number
+}

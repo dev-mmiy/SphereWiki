@@ -98,6 +98,24 @@ describe("useVaultWorkspace", () => {
     expect(result.current.graph.edges.some((e) => e.to === homeId)).toBe(true)
   })
 
+  it("searches the visible notes by content", () => {
+    const { result } = renderHook(() => useVaultWorkspace())
+    expect(result.current.search("welcome").map((h) => h.title)).toEqual(["Home"])
+    expect(result.current.search("   ")).toEqual([]) // blank query
+  })
+
+  it("drops a trashed note from search results", () => {
+    const { result } = renderHook(() => useVaultWorkspace())
+    // "Getting Started" body says "Back to [[Home]]" — searchable while visible.
+    expect(result.current.search("back").map((h) => h.title)).toEqual(["Getting Started"])
+    const gs = result.current.notes.find((m) => m.title === "Getting Started")
+    act(() => {
+      if (gs) result.current.remove(gs.id)
+    })
+    // Once soft-deleted it leaves the visible set, so search no longer surfaces it.
+    expect(result.current.search("back")).toEqual([])
+  })
+
   it("exposes the active note's tags from its frontmatter", () => {
     const { result } = renderHook(() => useVaultWorkspace())
     expect(result.current.tags).toEqual([]) // seed Home has no frontmatter

@@ -86,6 +86,21 @@ describe("NoteWorkspace", () => {
     ).toBeNull()
   })
 
+  it("finds a note by content via the search box and navigates to it", () => {
+    render(<NoteWorkspace />)
+    const search = screen.getByRole("region", { name: "Search" })
+    fireEvent.change(within(search).getByRole("searchbox", { name: "Search notes" }), {
+      target: { value: "brainstorm idea" }, // not in the seed; expect no matches first
+    })
+    expect(within(search).getByText(/no matches/i)).toBeTruthy()
+    // "Welcome" appears only in Home's body → searching it finds Home.
+    fireEvent.change(within(search).getByRole("searchbox", { name: "Search notes" }), {
+      target: { value: "welcome" },
+    })
+    const list = within(search).getByRole("list", { name: "Search results" })
+    expect(within(list).getByRole("button", { name: "Home" })).toBeTruthy()
+  })
+
   it("answers a workspace question with cited notes (RAG)", async () => {
     render(<NoteWorkspace auth={devAuth("editor")} />)
     fireEvent.change(screen.getByLabelText(/ask the workspace/i), {

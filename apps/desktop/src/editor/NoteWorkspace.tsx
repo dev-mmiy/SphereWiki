@@ -11,6 +11,7 @@ import { DiffView, HistoryPanel } from "./history-panel"
 import { LinksPanel } from "./links-panel"
 import { NoteEditor } from "./NoteEditor"
 import { NoteList } from "./note-list"
+import { SearchPanel } from "./search-panel"
 import { TagsPanel } from "./tags-panel"
 import { useVaultWorkspace } from "./use-vault-workspace"
 
@@ -88,6 +89,14 @@ export function NoteWorkspace({ auth = devAuth() }: { auth?: AuthProvider }) {
           ws.rename(id, next)
         }}
         onRestore={(id) => ws.restore(id)}
+      />
+      <SearchPanel
+        search={ws.search}
+        onNavigate={(id) => {
+          clearDiff()
+          setAiStatus(null)
+          ws.select(asNoteId(id))
+        }}
       />
       {ws.activeNote && <NoteEditor key={ws.activeId} note={ws.activeNote} editable={canWrite} />}
       <div className="ai-bar">
