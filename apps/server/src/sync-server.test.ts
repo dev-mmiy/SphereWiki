@@ -35,4 +35,75 @@ describe("websocket sync server", () => {
       await server.destroy()
     }
   }, 20000)
+
+  describe("room authorization", () => {
+    // A room-scoped grant: a token is valid only for the exact room it names.
+    const authorize = ({ token, room }: { token: string | null; room: string }): boolean =>
+      token === `grant:${room}`
+
+    it("admits a client with an accepted, room-scoped token", async () => {
+      const server = createSyncServer({ port: 0, authorize })
+      await server.listen()
+      const url = `ws://127.0.0.1:${server.address.port}`
+      const provider = new HocuspocusProvider({
+        url,
+        name: "ws1/note",
+        document: new Y.Doc(),
+        token: "grant:ws1/note",
+      })
+      try {
+        await waitUntil(() => provider.synced)
+        expect(provider.synced).toBe(true)
+      } finally {
+        provider.destroy()
+        await server.destroy()
+      }
+    }, 20000)
+
+    it("rejects a client whose token the authorizer denies", async () => {
+      const server = createSyncServer({ port: 0, authorize })
+      await server.listen()
+      const url = `ws://127.0.0.1:${server.address.port}`
+      let failed = false
+      const provider = new HocuspocusProvider({
+        url,
+        name: "ws1/note",
+        document: new Y.Doc(),
+        token: "nope",
+        onAuthenticationFailed: () => {
+          failed = true
+        },
+      })
+      try {
+        await waitUntil(() => failed)
+        expect(provider.synced).toBe(false)
+      } finally {
+        provider.destroy()
+        await server.destroy()
+      }
+    }, 20000)
+
+    it("scopes the token to its room — a grant for one room can't join another", async () => {
+      const server = createSyncServer({ port: 0, authorize })
+      await server.listen()
+      const url = `ws://127.0.0.1:${server.address.port}`
+      let failed = false
+      const provider = new HocuspocusProvider({
+        url,
+        name: "ws2/note", // joining ws2...
+        document: new Y.Doc(),
+        token: "grant:ws1/note", // ...with a token granted only for ws1
+        onAuthenticationFailed: () => {
+          failed = true
+        },
+      })
+      try {
+        await waitUntil(() => failed)
+        expect(provider.synced).toBe(false)
+      } finally {
+        provider.destroy()
+        await server.destroy()
+      }
+    }, 20000)
+  })
 })
