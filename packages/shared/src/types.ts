@@ -50,10 +50,16 @@ export interface TagIndex {
   readonly byNote: ReadonlyMap<string, readonly string[]>
 }
 
-/** One note in the graph view. */
+/** One node in the graph view. */
 export interface GraphNode {
   readonly id: string
   readonly title: string
+  /**
+   * Present only on a "ghost" node — a dangling `[[link]]` target that has no note yet, surfaced
+   * (opt-in) so the graph shows the wiki's unwritten frontier and the node can be created. A real
+   * note omits this field, so `{id, title}` nodes stay byte-identical to the pre-ghost model.
+   */
+  readonly kind?: "dangling"
 }
 
 /** A directed note→note connection: a `[[wikilink]]` whose target title resolved to a real note. */

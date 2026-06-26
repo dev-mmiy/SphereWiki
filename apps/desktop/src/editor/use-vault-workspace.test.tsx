@@ -88,6 +88,29 @@ describe("useVaultWorkspace", () => {
     expect(result.current.graph.edges).toContainEqual({ from: homeId, to: nowhere?.id })
   })
 
+  it("create() restores a trashed note instead of duplicating its title", () => {
+    const { result } = renderHook(() => useVaultWorkspace())
+    const ideas = result.current.notes.find((m) => m.title === "Ideas")
+    if (ideas === undefined) throw new Error("expected Ideas")
+    act(() => result.current.remove(ideas.id))
+    expect(result.current.notes.some((m) => m.title === "Ideas")).toBe(false)
+    // A ghost/red-link click for the trashed title recreates by title — must restore, not dupe.
+    act(() => result.current.create("Ideas"))
+    const ideasNotes = result.current.notes.filter((m) => m.title === "Ideas")
+    expect(ideasNotes).toHaveLength(1)
+    expect(ideasNotes[0]?.id).toBe(ideas.id) // same note, body recovered (not a blank duplicate)
+    expect(result.current.deleted.some((m) => m.id === ideas.id)).toBe(false)
+  })
+
+  it("create() selects an existing visible note rather than duplicating it", () => {
+    const { result } = renderHook(() => useVaultWorkspace())
+    const ideas = result.current.notes.find((m) => m.title === "Ideas")
+    if (ideas === undefined) throw new Error("expected Ideas")
+    act(() => result.current.create("Ideas"))
+    expect(result.current.notes.filter((m) => m.title === "Ideas")).toHaveLength(1)
+    expect(result.current.activeId).toBe(ideas.id)
+  })
+
   it("computes backlinks for the active note", () => {
     const { result } = renderHook(() => useVaultWorkspace())
     // Home is linked from both Getting Started and Ideas.

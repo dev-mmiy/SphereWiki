@@ -439,7 +439,10 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
 
   // The whole-workspace graph model (nodes = visible notes, edges = resolved wikilinks),
   // derived from the same link graph + note list so it tracks every body/title change.
-  const graphModel = useMemo<GraphModel>(() => buildGraphModel(notes, graph), [notes, graph])
+  const graphModel = useMemo<GraphModel>(
+    () => buildGraphModel(notes, graph, { includeDangling: true }),
+    [notes, graph],
+  )
 
   // The active note's tags (from its frontmatter), and the visible notes carrying a given tag —
   // both derived from the workspace's own Markdown, so tag navigation can never cross workspaces.
@@ -490,13 +493,30 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
   )
   const create = useCallback(
     (title: string): void => {
+      // Resolve-or-restore: never mint a duplicate of a note that already holds this title.
+      // A visible note -> just select it. A *trashed* note -> restore it (recovering its real
+      // body) rather than minting a blank duplicate, so a ghost/red-link click can't orphan a
+      // tombstoned note or break the title-uniqueness link-integrity invariant.
+      const visible = unionList().find((m) => m.title === title)
+      if (visible) {
+        setActiveId(visible.id)
+        return
+      }
+      const trashed = deletedList().find((m) => m.title === title)
+      if (trashed) {
+        registry.set(trashed.id, { title: trashed.title }, LOCAL) // un-tombstone (deleted omitted)
+        setNotes(unionList())
+        setDeleted(deletedList())
+        setActiveId(trashed.id)
+        return
+      }
       const meta = vault.create(title, `# ${title}\n`)
       pendingSeedRef.current.add(meta.id) // seed this note's body into its synced doc on open
       registry.set(meta.id, { title }, LOCAL) // propagate the list entry to peers
       setNotes(unionList())
       setActiveId(meta.id)
     },
-    [vault, registry, unionList],
+    [vault, registry, unionList, deletedList],
   )
   // Rename: change the display title AND atomically repoint every `[[old title]]` backlink across
   // the vault, so no dangling link is left behind (link integrity). The OPEN note's body change

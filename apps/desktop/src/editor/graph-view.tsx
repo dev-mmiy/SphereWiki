@@ -24,21 +24,27 @@ function layout(nodes: readonly GraphNode[]): Map<string, { x: number; y: number
 }
 
 /**
- * The basic graph view: notes as nodes, `[[wikilink]]` relationships as edges, laid out on
- * a deterministic circle (no physics engine — cheap, stable, and unit-testable). Each node is
- * a button: clicking it navigates to that note. The active note is highlighted. Presentation
- * is via SVG attributes so it renders without depending on a stylesheet.
+ * The basic graph view: notes as nodes, `[[wikilink]]` relationships as edges, laid out on a
+ * deterministic circle (no physics engine — cheap, stable, and unit-testable). A real node is a
+ * button that navigates to its note; the active note is highlighted. A *dangling* node (a ghost:
+ * a `[[link]]` whose note doesn't exist yet) is drawn dashed and, clicked, creates that note —
+ * surfacing and growing the wiki's unwritten frontier. Presentation is via SVG attributes so it
+ * renders without depending on a stylesheet.
  */
 export function GraphView({
   nodes,
   edges,
   activeId,
+  canCreate,
   onNavigate,
+  onCreate,
 }: {
   nodes: readonly GraphNode[]
   edges: readonly GraphEdge[]
   activeId: string
+  canCreate: boolean
   onNavigate: (id: string) => void
+  onCreate: (title: string) => void
 }) {
   if (nodes.length === 0) {
     return (
@@ -76,25 +82,53 @@ export function GraphView({
         {nodes.map((node) => {
           const p = pos.get(node.id)
           if (p === undefined) return null
-          const active = node.id === activeId
+          const dangling = node.kind === "dangling"
+          // A ghost is never the active note (its synthetic id is never selected); guard so a
+          // stray ghost activeId can't mislabel the frontier node as current.
+          const active = !dangling && node.id === activeId
+          const disabled = dangling && !canCreate
+          const activate = (): void => {
+            if (disabled) return
+            if (dangling) onCreate(node.title)
+            else onNavigate(node.id)
+          }
+          const label = !dangling
+            ? `Open ${node.title}`
+            : disabled
+              ? `Uncreated note: ${node.title}` // a viewer can't create it — don't promise an action
+              : `Create note: ${node.title}`
+          const className = dangling
+            ? "graph-node graph-node-dangling"
+            : active
+              ? "graph-node graph-node-active"
+              : "graph-node"
           return (
             // biome-ignore lint/a11y/useSemanticElements: SVG has no native button; role+handlers make the node accessible.
             <g
               key={node.id}
               role="button"
-              tabIndex={0}
-              aria-label={`Open ${node.title}`}
+              tabIndex={disabled ? -1 : 0}
+              aria-label={label}
               aria-current={active ? "true" : undefined}
-              className={active ? "graph-node graph-node-active" : "graph-node"}
-              onClick={() => onNavigate(node.id)}
+              aria-disabled={disabled || undefined}
+              className={className}
+              opacity={disabled ? 0.5 : undefined}
+              onClick={activate}
               onKeyDown={(ev) => {
                 if (ev.key === "Enter" || ev.key === " ") {
                   ev.preventDefault()
-                  onNavigate(node.id)
+                  activate()
                 }
               }}
             >
-              <circle cx={p.x} cy={p.y} r={NODE_R} fill={active ? "#2563eb" : "#cbd5e1"} />
+              <circle
+                cx={p.x}
+                cy={p.y}
+                r={NODE_R}
+                fill={active ? "#2563eb" : dangling ? "#f8fafc" : "#cbd5e1"}
+                stroke={dangling ? "#94a3b8" : "none"}
+                strokeDasharray={dangling ? "2 2" : undefined}
+              />
               <text x={p.x} y={p.y - NODE_R - 3} textAnchor="middle" fontSize={9} fill="#334155">
                 {node.title}
               </text>

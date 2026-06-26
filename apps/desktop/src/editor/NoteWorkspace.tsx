@@ -135,10 +135,16 @@ export function NoteWorkspace({ auth = devAuth() }: { auth?: AuthProvider }) {
         nodes={ws.graph.nodes}
         edges={ws.graph.edges}
         activeId={ws.activeId}
+        canCreate={canWrite}
         onNavigate={(id) => {
           clearDiff()
           setAiStatus(null)
           ws.select(asNoteId(id))
+        }}
+        onCreate={(title) => {
+          clearDiff()
+          setAiStatus(null)
+          ws.create(title)
         }}
       />
       <HistoryPanel
