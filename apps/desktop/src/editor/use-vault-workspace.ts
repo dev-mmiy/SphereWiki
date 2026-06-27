@@ -62,6 +62,7 @@ import {
   type AiMetricsRecorder,
   createAiMetricsRecorder,
 } from "../metrics/ai-metrics"
+import { createSessionPrefs, type SessionPrefsStore } from "../session/session-prefs"
 import { type ConnectRegistry, connectRegistryToServer } from "../sync/connect-registry"
 import { type ConnectNote, connectNoteToServer } from "../sync/connect-server"
 import type { ConnectLocalPersistence, LocalDocPersistence } from "../sync/local-persistence"
@@ -192,6 +193,11 @@ export interface UseVaultWorkspaceOptions {
    * revert/diff points survive a reload). Uses `vaultStorage` as its backend when provided.
    */
   readonly persistVersionsKey?: string
+  /**
+   * When set, session UX prefs (last active note + AI autonomy mode) persist to localStorage under
+   * this key, so a reload resumes where you left off. Uses `vaultStorage` as its backend.
+   */
+  readonly persistSessionKey?: string
   /** Storage backend for the durable vault; defaults to window.localStorage (injectable for tests). */
   readonly vaultStorage?: Pick<Storage, "getItem" | "setItem">
   /** Note-id generator threaded into the durable vault (injectable for deterministic tests). */
@@ -295,11 +301,24 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     [persistVersionsKey, vaultStorage],
   )
 
+  // Durable session UX prefs (last active note + AI mode), so a reload resumes where you left off.
+  const sessionPrefsRef = useRef<SessionPrefsStore | null>(null)
+  if (sessionPrefsRef.current === null && options.persistSessionKey !== undefined) {
+    sessionPrefsRef.current = createSessionPrefs({
+      key: options.persistSessionKey,
+      ...(options.vaultStorage !== undefined ? { storage: options.vaultStorage } : {}),
+    })
+  }
+  const sessionPrefs = sessionPrefsRef.current
+
   const [notes, setNotes] = useState<readonly NoteMeta[]>(() => vault.list())
   const [activeId, setActiveId] = useState<NoteId>(() => {
-    const first = vault.list()[0]
+    const list = vault.list()
+    const first = list[0]
     if (first === undefined) throw new Error("vault must seed at least one note")
-    return first.id
+    // Resume the last active note if it still exists (a tombstoned one is corrected by reconcile).
+    const stored = sessionPrefs?.read().activeId
+    return stored !== undefined && list.some((m) => m.id === stored) ? asNoteId(stored) : first.id
   })
   const [active, setActive] = useState<{ id: NoteId; note: YjsBackedNote } | null>(null)
   // True once the active note's authoritative state has loaded. In no-sync mode it flips
@@ -314,13 +333,24 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
   const [versions, setVersions] = useState<readonly Version[]>([])
   const [aiBusy, setAiBusy] = useState(false)
   const [aiMetrics, setAiMetrics] = useState<AiEditMetrics>(() => aiMetricsRecorder.snapshot())
-  const [aiAutonomy, setAiAutonomy] = useState<Autonomy>("auto")
+  const [aiAutonomy, setAiAutonomy] = useState<Autonomy>(
+    () => sessionPrefs?.read().aiAutonomy ?? "auto",
+  )
   const [deleted, setDeleted] = useState<readonly NoteMeta[]>([])
 
   // Live active id, read by callbacks that outlive a render: an in-flight AI run (to tell if the
   // user switched away) and the registry reconcile (to move off a note a peer just deleted).
   const activeIdRef = useRef(activeId)
   activeIdRef.current = activeId
+
+  // Persist session UX prefs as they change (no-op when no session key is configured). Effects so
+  // every path that moves the active note / changes the mode is captured, not just the callbacks.
+  useEffect(() => {
+    sessionPrefs?.write({ activeId })
+  }, [activeId, sessionPrefs])
+  useEffect(() => {
+    sessionPrefs?.write({ aiAutonomy })
+  }, [aiAutonomy, sessionPrefs])
 
   // The displayed note list: the local vault (every reconciled registry note is materialized
   // into it) with the registry's title winning for display so a remote rename shows. Purely

@@ -731,6 +731,34 @@ describe("useVaultWorkspace", () => {
     second.unmount()
   })
 
+  it("resumes the last active note and AI mode across a remount (session prefs)", () => {
+    const m = new Map<string, string>()
+    const vaultStorage = {
+      getItem: (k: string) => m.get(k) ?? null,
+      setItem: (k: string, v: string) => {
+        m.set(k, v)
+      },
+    }
+    const opts = {
+      persistVaultKey: "test:vault:session",
+      persistSessionKey: "test:session",
+      vaultStorage,
+    }
+
+    const first = renderHook(() => useVaultWorkspace(opts))
+    const ideas = first.result.current.notes.find((x) => x.title === "Ideas")
+    if (ideas === undefined) throw new Error("expected Ideas")
+    act(() => first.result.current.select(ideas.id))
+    act(() => first.result.current.setAiAutonomy("suggest"))
+    first.unmount()
+
+    // Reload: a fresh hook backed by the SAME vault + session prefs.
+    const second = renderHook(() => useVaultWorkspace(opts))
+    expect(second.result.current.activeId).toBe(ideas.id) // resumed on Ideas, not the first note
+    expect(second.result.current.aiAutonomy).toBe("suggest") // mode resumed too
+    second.unmount()
+  })
+
   it("persists version history across a remount (revert points survive a reload)", () => {
     const m = new Map<string, string>()
     const vaultStorage = {
