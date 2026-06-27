@@ -22,6 +22,7 @@ import {
   buildLinkGraph,
   buildSearchIndex,
   buildTagIndex,
+  buildWorkspaceMetrics,
   createMemoryVault,
   createMemoryVersionStore,
   type DiffChunk,
@@ -45,6 +46,7 @@ import {
   type Version,
   type VersionStore,
   type WorkspaceId,
+  type WorkspaceMetrics,
   type YjsBackedNote,
   type YjsBackedRegistry,
   yjsEngine,
@@ -93,6 +95,8 @@ export interface VaultWorkspace {
   readonly backlinks: readonly NoteMeta[]
   /** Node/edge model of the whole workspace's notes and their wikilinks — the basic graph view. */
   readonly graph: GraphModel
+  /** Derived graph-growth metrics (notes / links / frontier / tags) for the dogfooding readout. */
+  readonly metrics: WorkspaceMetrics
   /** The active note's tags, read from its frontmatter (derived from Markdown). */
   readonly tags: readonly string[]
   /** Visible notes carrying a given tag — for tag-based navigation (workspace-scoped). */
@@ -461,6 +465,12 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     () => buildGraphModel(notes, graph, { includeDangling: true }),
     [notes, graph],
   )
+  // Workspace metrics (graph growth: notes / links / frontier / tags) — the dogfooding signal,
+  // derived from the same graph model + tag index, so it tracks every body/title/tag change.
+  const metrics = useMemo<WorkspaceMetrics>(
+    () => buildWorkspaceMetrics(graphModel, tagIndex),
+    [graphModel, tagIndex],
+  )
 
   // The active note's tags (from its frontmatter), and the visible notes carrying a given tag —
   // both derived from the workspace's own Markdown, so tag navigation can never cross workspaces.
@@ -713,6 +723,7 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     outgoing,
     backlinks,
     graph: graphModel,
+    metrics,
     tags,
     notesForTag,
     addTag,

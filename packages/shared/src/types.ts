@@ -104,3 +104,21 @@ export interface SearchHit {
   readonly title: string
   readonly score: number
 }
+
+/**
+ * A derived, point-in-time summary of a workspace's graph growth — the dogfooding signal that
+ * "the note graph measurably grows." All counts are visible-scoped (trashed notes excluded) and
+ * rebuildable from Markdown, so the same inputs always yield the same numbers.
+ */
+export interface WorkspaceMetrics {
+  /** Visible notes. */
+  readonly notes: number
+  /** Resolved note→note `[[wikilink]]` edges (deduped, self-links excluded). */
+  readonly links: number
+  /** Edges to referenced-but-uncreated notes — the unwritten frontier. */
+  readonly unwrittenLinks: number
+  /** Distinct tags in use across visible notes. */
+  readonly tags: number
+  /** Visible notes carrying at least one tag. */
+  readonly taggedNotes: number
+}

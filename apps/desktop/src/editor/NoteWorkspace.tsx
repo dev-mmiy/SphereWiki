@@ -9,6 +9,7 @@ import { AskPanel } from "./ask-panel"
 import { GraphView } from "./graph-view"
 import { DiffView, HistoryPanel } from "./history-panel"
 import { LinksPanel } from "./links-panel"
+import { MetricsPanel } from "./metrics-panel"
 import { NoteEditor } from "./NoteEditor"
 import { NoteList } from "./note-list"
 import { SearchPanel } from "./search-panel"
@@ -142,6 +143,7 @@ export function NoteWorkspace({ auth = devAuth() }: { auth?: AuthProvider }) {
           ws.removeTag(tag)
         }}
       />
+      <MetricsPanel metrics={ws.metrics} />
       <GraphView
         nodes={ws.graph.nodes}
         edges={ws.graph.edges}

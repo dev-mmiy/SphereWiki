@@ -146,6 +146,28 @@ describe("useVaultWorkspace", () => {
     expect(result.current.graph.edges.some((e) => e.to === homeId)).toBe(true)
   })
 
+  it("exposes workspace metrics that track graph growth", () => {
+    const { result } = renderHook(() => useVaultWorkspace())
+    // Seed: Home/Getting Started/Ideas, fully cross-linked, no tags.
+    expect(result.current.metrics).toEqual({
+      notes: 3,
+      links: 4,
+      unwrittenLinks: 0,
+      tags: 0,
+      taggedNotes: 0,
+    })
+    // Add a tag and a link to a not-yet-created note: tags + the frontier grow.
+    act(() =>
+      result.current.activeNote?.setText(
+        "---\ntags:\n  - planning\n---\n# Home\n\n[[Roadmap]]\n",
+        LOCAL,
+      ),
+    )
+    expect(result.current.metrics.tags).toBe(1)
+    expect(result.current.metrics.taggedNotes).toBe(1)
+    expect(result.current.metrics.unwrittenLinks).toBe(1) // [[Roadmap]] has no note yet
+  })
+
   it("searches the visible notes by content", () => {
     const { result } = renderHook(() => useVaultWorkspace())
     expect(result.current.search("welcome").map((h) => h.title)).toEqual(["Home"])

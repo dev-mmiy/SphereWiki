@@ -84,6 +84,15 @@ describe("NoteWorkspace", () => {
     expect(within(tagsRegion).queryByRole("textbox", { name: "Add tag" })).toBeNull()
   })
 
+  it("shows a workspace metrics readout (graph growth)", () => {
+    render(<NoteWorkspace />)
+    const region = screen.getByRole("region", { name: "Workspace metrics" })
+    // Seed has 3 cross-linked notes.
+    expect(
+      within(region).getByText("Notes").closest(".metric")?.querySelector("dd")?.textContent,
+    ).toBe("3")
+  })
+
   it("renders the workspace graph and navigates by clicking a node", () => {
     render(<NoteWorkspace />)
     const graph = screen.getByRole("region", { name: "Graph" })

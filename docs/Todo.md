@@ -19,7 +19,7 @@
 | **M3b** Real WS super-peer + durable storage + app sync | ◐ | local done over real sockets; cloud control plane deferred (credentials) |
 | **M4a** On-save AI agent + RAG (local) | ✅ | heuristic suggester + deterministic embedder/answerer, no credentials |
 | **M4b** Real AI backends (ONNX / pgvector / Claude) | ⏳ | needs a model download + a Claude key |
-| **M5** Dogfood hardening + success instrumentation | ▢ | the next major phase toward MVP exit |
+| **M5** Dogfood hardening + success instrumentation | ◐ | graph-growth metrics shipped; kept-vs-reverted + reliability remain |
 
 **Where we are:** every *local, no-credentials* slice of MVP capability is in place. The desktop app
 runs as a web build (`pnpm dev`) with the CodeMirror↔Yjs editor, a multi-note vault, wikilinks /
@@ -55,6 +55,9 @@ follow-ups and grew to span Notes / AI / sync hardening. Full detail is in the g
 - ✅ **Human tag curation.** The Tags panel lets an editor **add** / **remove** tags (per-tag `×` + a form), so people and AI co-curate the same tags; edits ride the note's CRDT doc (attributed, synced, revertible) and the panel updates live. Write-permission-gated. Adversarial-reviewed (2 dimensions; 5 findings fixed) — `addNoteTag`/`removeNoteTag` edit frontmatter **surgically via the YAML Document API** (sibling keys / scalars / comments preserved), and tag edits **no-op until a synced note hydrates** (prevents pre-hydration frontmatter corruption).
 - ✅ **Frontmatter-preserving AI edits.** The on-save agent's auto-link/auto-tag no longer re-serializes the whole frontmatter: `applyTagSuggestions` delegates to `addNoteTag`, and `buildAgentEdit` applies links via a new shared **`withNoteBody`** (body-only edit, frontmatter text preserved byte-for-byte). Closes the M4a *frontmatter canonicalization* limitation codebase-wide. Backed by shared `splitFrontmatter` / `withNoteBody`.
 
+### Metrics / dogfooding (M5)
+- ✅ **Workspace graph-growth metrics.** A pure shared `buildWorkspaceMetrics(graph, tags)` summarizes the dogfooding "is the wiki growing?" signal from the derived graph model + tag index: **notes**, resolved **links**, **unwritten** (frontier) links, distinct **tags**, and **tagged** notes — all visible-scoped (trash excluded) and idempotent. The desktop `MetricsPanel` shows the readout above the graph. Tested: shared (counts incl. dangling/tag de-dup/empty), hook (reflects the seed; tracks a tag + frontier edit), component + integration. *Remaining for M5 instrumentation:* kept-vs-reverted + AI-contribution share (need persistent version/attribution data — see Next up).
+
 ---
 
 ## Known limitations & documented bounds (bounded, behind seams)
@@ -82,7 +85,7 @@ Surfaced by adversarial review; each is additive and lands behind the existing s
 ## Next up
 
 ### Local-testable now (no credentials)
-1. **M5 — success-criteria instrumentation.** Make the central-hypothesis metrics measurable: AI suggestions **kept-vs-reverted** (target ≥ ~70% kept) and **graph growth** (links/notes per week, AI contribution visible). Needs a way to record when an AI version is reverted vs kept + a small metrics readout. *High value — gates MVP exit.*
+1. **M5 — kept-vs-reverted instrumentation** (the remaining half; graph-growth metrics already shipped). Measure AI suggestions **kept-vs-reverted** (target ≥ ~70% kept) and **AI contribution share** of the graph. Needs persistent per-note version/attribution data that records when an AI version is kept vs reverted — leans on the version-store persistence that lands with the DB (M3b/M4b), or a lightweight local event recorder behind a seam as an interim. *High value — gates MVP exit.*
 2. **M5 — reliability hardening.** Stress the data invariants the MVP can't compromise: no lost edits under concurrent sync, revert always works, isolation holds. Add convergence/property tests and an onboarding pass.
 3. **Polish candidates (smaller, optional):** wikilink autocomplete in the editor (`[[` → title suggestions); a Cmd-K quick-switcher over the existing search; surfacing the AI "suggest" autonomy mode (review-before-apply) in the UI; client-side room-auth token threading (inert until WorkOS, but readies the seam).
 
