@@ -5,7 +5,8 @@
  * hasn't overridden it, and (b) explicitly via [data-theme="dark"]. The theme module sets/removes
  * `data-theme` on <html>; "system" removes it so the @media query decides (no JS matchMedia needed).
  *
- * Desktop-local for now; moves to a shared `@spherewiki/ui` when the web client is built.
+ * The shared foundation: imported by every client (desktop today, web later) via
+ * `@spherewiki/ui/tokens.css`, so the palette can't drift between them.
  */
 
 :root {

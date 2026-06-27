@@ -6,7 +6,8 @@
     "noEmit": true,
     "paths": {
       "@spherewiki/ai": ["../../packages/ai/src/index.ts"],
-      "@spherewiki/shared": ["../../packages/shared/src/index.ts"]
+      "@spherewiki/shared": ["../../packages/shared/src/index.ts"],
+      "@spherewiki/ui": ["../../packages/ui/src/index.ts"]
     }
   },
   "include": ["src"]

@@ -13,6 +13,7 @@
     "@hocuspocus/provider": "^4.3.0",
     "@spherewiki/ai": "workspace:*",
     "@spherewiki/shared": "workspace:*",
+    "@spherewiki/ui": "workspace:*",
     "codemirror": "^6.0.2",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",

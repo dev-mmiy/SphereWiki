@@ -4,7 +4,10 @@ import { defineConfig } from "vitest/config"
 
 const sharedSrc = path.resolve(import.meta.dirname, "packages/shared/src/index.ts")
 const aiSrc = path.resolve(import.meta.dirname, "packages/ai/src/index.ts")
-const alias = { "@spherewiki/shared": sharedSrc, "@spherewiki/ai": aiSrc }
+// UI aliases to the src directory so the bare entry resolves to index (the CSS subpaths aren't
+// imported from tests, but a directory alias keeps it consistent with the vite build config).
+const uiSrc = path.resolve(import.meta.dirname, "packages/ui/src")
+const alias = { "@spherewiki/shared": sharedSrc, "@spherewiki/ai": aiSrc, "@spherewiki/ui": uiSrc }
 
 export default defineConfig({
   test: {
@@ -13,8 +16,23 @@ export default defineConfig({
         resolve: { alias },
         test: {
           name: "node",
-          include: ["packages/*/src/**/*.test.ts", "apps/server/src/**/*.test.ts"],
+          // Explicit per-package so the React/jsdom packages (ui) don't get pulled into node env.
+          include: [
+            "packages/shared/src/**/*.test.ts",
+            "packages/ai/src/**/*.test.ts",
+            "apps/server/src/**/*.test.ts",
+          ],
           environment: "node",
+        },
+      },
+      {
+        plugins: [react()],
+        resolve: { alias },
+        test: {
+          name: "ui",
+          include: ["packages/ui/src/**/*.test.{ts,tsx}"],
+          environment: "jsdom",
+          setupFiles: [path.resolve(import.meta.dirname, "packages/ui/vitest.setup.ts")],
         },
       },
       {

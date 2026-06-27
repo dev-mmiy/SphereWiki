@@ -1,7 +1,8 @@
 /*
  * SphereWiki base layer (DESIGN.md Phase 1): a light reset + base typography that applies the
- * tokens to the document. Component-level styling lands in Phase 2; this is just the themed canvas
- * (background / text / font / links / focus) so the app reads coherently before the component pass.
+ * tokens to the document. The shared themed canvas (background / text / font / links / focus),
+ * imported by every client via `@spherewiki/ui/base.css`; app-specific component styling lives in
+ * each app.
  */
 
 *,
