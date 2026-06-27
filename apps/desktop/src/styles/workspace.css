@@ -1,0 +1,184 @@
+/*
+ * SphereWiki app shell (DESIGN.md Phase 2): the 3-pane layout — top bar over [sidebar · editor ·
+ * rail] — plus a base look for the panels and common controls, all from the tokens. Per-component
+ * refinement (graph, diff, history attribution, tag chips, kept-rate, …) lands in later passes.
+ */
+
+.app {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  height: 100vh;
+}
+
+/* Top bar */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.brand {
+  margin: 0;
+  font-size: var(--text-lg);
+}
+.topbar-meta {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.who {
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+/* 3-pane body */
+.panes {
+  display: grid;
+  grid-template-columns: 256px minmax(0, 1fr) 300px;
+  min-height: 0;
+}
+.sidebar,
+.rail,
+.editor-pane {
+  overflow-y: auto;
+  min-width: 0;
+}
+.sidebar {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.rail {
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.editor-pane {
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* Panel headings (sidebar + rail): small, quiet section labels. */
+.sidebar h3,
+.rail h3 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+/* Lists in the panels — flush, no default bullets/padding. */
+.sidebar ul,
+.rail ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Note list (sidebar nav) */
+nav > ul li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+nav > ul li > button:first-child {
+  flex: 1;
+  text-align: left;
+}
+
+/* Buttons — quiet by default; the row/list buttons read as items, not chips. */
+button {
+  padding: var(--space-1) var(--space-2);
+  background: transparent;
+  color: inherit;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+button:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+/* The current note / pressed tag reads as selected. */
+[aria-current="true"],
+[aria-pressed="true"] {
+  background: var(--surface-2);
+  color: var(--accent);
+}
+
+/* Inputs */
+input,
+textarea {
+  width: 100%;
+  padding: var(--space-1) var(--space-2);
+  background: var(--bg);
+  color: inherit;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+/* Editor frame */
+.cm-editor {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  min-height: 320px;
+}
+
+/* AI action bar */
+.ai-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.ai-bar > button {
+  border-color: var(--border);
+  background: var(--accent);
+  color: var(--accent-contrast);
+  padding: var(--space-1) var(--space-3);
+}
+.ai-bar > button:hover:not(:disabled) {
+  background: var(--accent);
+  filter: brightness(1.05);
+}
+.ai-status {
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+/* Empty state */
+.empty-state {
+  margin: auto;
+  text-align: center;
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+/* Trash disclosure */
+.trash {
+  margin-top: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--muted);
+}

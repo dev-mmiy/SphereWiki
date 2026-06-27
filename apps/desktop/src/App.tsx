@@ -1,11 +1,6 @@
-import { appTitle } from "./app-info"
 import { NoteWorkspace } from "./editor/NoteWorkspace"
 
+// The app shell (top bar + 3-pane layout) lives in NoteWorkspace; App just mounts it.
 export function App() {
-  return (
-    <main>
-      <h1>{appTitle()}</h1>
-      <NoteWorkspace />
-    </main>
-  )
+  return <NoteWorkspace />
 }

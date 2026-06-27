@@ -1,6 +1,7 @@
 import type { OnSaveResult } from "@spherewiki/ai"
 import { type AuthProvider, asNoteId, can, type DiffChunk, roleFor } from "@spherewiki/shared"
 import { useState } from "react"
+import { appTitle } from "../app-info"
 import { devAuth, WORKSPACE_ID } from "../auth-dev"
 import { createAiMetricsRecorder } from "../metrics/ai-metrics"
 import { connectRegistryToServer } from "../sync/connect-registry"
@@ -72,145 +73,165 @@ export function NoteWorkspace({ auth = devAuth() }: { auth?: AuthProvider }) {
   }
 
   return (
-    <div className="workspace">
-      <header>
-        <span>{session ? `${session.account.email} · ${role ?? "no access"}` : "signed out"}</span>
-        <ThemeToggle />
+    <div className="app">
+      <header className="topbar">
+        <h1 className="brand">{appTitle()}</h1>
+        <div className="topbar-meta">
+          <span className="who">
+            {session ? `${session.account.email} · ${role ?? "no access"}` : "signed out"}
+          </span>
+          <ThemeToggle />
+        </div>
       </header>
-      <NoteList
-        notes={ws.notes}
-        activeId={ws.activeId}
-        canCreate={canWrite}
-        canEdit={canWrite}
-        deleted={ws.deleted}
-        onSelect={(id) => {
-          clearDiff()
-          setAiStatus(null)
-          ws.select(id)
-        }}
-        onCreate={() => ws.create(`Note ${ws.notes.length + 1}`)}
-        onDelete={(id) => {
-          clearDiff()
-          setAiStatus(null)
-          ws.remove(id)
-        }}
-        onRename={(id) => {
-          const current = ws.notes.find((m) => m.id === id)?.title ?? ""
-          const next = window.prompt("Rename note", current)
-          if (next === null || next.trim() === "") return
-          clearDiff()
-          setAiStatus(null)
-          ws.rename(id, next)
-        }}
-        onRestore={(id) => ws.restore(id)}
-      />
-      <SearchPanel
-        search={ws.search}
-        onNavigate={(id) => {
-          clearDiff()
-          setAiStatus(null)
-          ws.select(asNoteId(id))
-        }}
-      />
-      {ws.notes.length === 0 ? (
-        <section className="empty-state" aria-label="Empty workspace">
-          <p>No notes yet.</p>
-          <button
-            type="button"
-            disabled={!canWrite}
-            onClick={() => {
+
+      <div className="panes">
+        <aside className="sidebar">
+          <SearchPanel
+            search={ws.search}
+            onNavigate={(id) => {
               clearDiff()
               setAiStatus(null)
-              ws.create("Untitled")
+              ws.select(asNoteId(id))
             }}
-          >
-            Create your first note
-          </button>
-          {ws.deleted.length > 0 && <p className="empty-hint">…or restore one from Trash above.</p>}
-        </section>
-      ) : (
-        ws.activeNote && <NoteEditor key={ws.activeId} note={ws.activeNote} editable={canWrite} />
-      )}
-      <div className="ai-bar">
-        <button type="button" onClick={runAi} disabled={!canWrite || ws.aiBusy}>
-          Organize with AI
-        </button>
-        {aiStatus && <span className="ai-status">{aiStatus}</span>}
+          />
+          <NoteList
+            notes={ws.notes}
+            activeId={ws.activeId}
+            canCreate={canWrite}
+            canEdit={canWrite}
+            deleted={ws.deleted}
+            onSelect={(id) => {
+              clearDiff()
+              setAiStatus(null)
+              ws.select(id)
+            }}
+            onCreate={() => ws.create(`Note ${ws.notes.length + 1}`)}
+            onDelete={(id) => {
+              clearDiff()
+              setAiStatus(null)
+              ws.remove(id)
+            }}
+            onRename={(id) => {
+              const current = ws.notes.find((m) => m.id === id)?.title ?? ""
+              const next = window.prompt("Rename note", current)
+              if (next === null || next.trim() === "") return
+              clearDiff()
+              setAiStatus(null)
+              ws.rename(id, next)
+            }}
+            onRestore={(id) => ws.restore(id)}
+          />
+        </aside>
+
+        <main className="editor-pane">
+          {ws.notes.length === 0 ? (
+            <section className="empty-state" aria-label="Empty workspace">
+              <p>No notes yet.</p>
+              <button
+                type="button"
+                disabled={!canWrite}
+                onClick={() => {
+                  clearDiff()
+                  setAiStatus(null)
+                  ws.create("Untitled")
+                }}
+              >
+                Create your first note
+              </button>
+              {ws.deleted.length > 0 && (
+                <p className="empty-hint">…or restore one from the Trash.</p>
+              )}
+            </section>
+          ) : (
+            ws.activeNote && (
+              <NoteEditor key={ws.activeId} note={ws.activeNote} editable={canWrite} />
+            )
+          )}
+          <div className="ai-bar">
+            <button type="button" onClick={runAi} disabled={!canWrite || ws.aiBusy}>
+              Organize with AI
+            </button>
+            {aiStatus && <span className="ai-status">{aiStatus}</span>}
+          </div>
+          {diff && <DiffView chunks={diff} />}
+        </main>
+
+        <aside className="rail">
+          <LinksPanel
+            outgoing={ws.outgoing}
+            backlinks={ws.backlinks}
+            canCreate={canWrite}
+            onNavigate={(title) => {
+              clearDiff()
+              setAiStatus(null)
+              ws.selectByTitle(title)
+            }}
+            onCreate={(title) => {
+              clearDiff()
+              setAiStatus(null)
+              ws.create(title)
+            }}
+          />
+          <TagsPanel
+            key={ws.activeId}
+            tags={ws.tags}
+            activeId={ws.activeId}
+            canEdit={canWrite && ws.activeNote !== null && ws.hydrated}
+            notesForTag={ws.notesForTag}
+            onNavigate={(id) => {
+              clearDiff()
+              setAiStatus(null)
+              ws.select(id)
+            }}
+            onAddTag={(tag) => {
+              clearDiff()
+              setAiStatus(null)
+              ws.addTag(tag)
+            }}
+            onRemoveTag={(tag) => {
+              clearDiff()
+              setAiStatus(null)
+              ws.removeTag(tag)
+            }}
+          />
+          <MetricsPanel metrics={ws.metrics} ai={ws.aiMetrics} />
+          <GraphView
+            nodes={ws.graph.nodes}
+            edges={ws.graph.edges}
+            activeId={ws.activeId}
+            canCreate={canWrite}
+            onNavigate={(id) => {
+              clearDiff()
+              setAiStatus(null)
+              ws.select(asNoteId(id))
+            }}
+            onCreate={(title) => {
+              clearDiff()
+              setAiStatus(null)
+              ws.create(title)
+            }}
+          />
+          <HistoryPanel
+            versions={ws.versions}
+            canEdit={canWrite}
+            onCommit={() => ws.commit()}
+            onRevert={(id) => {
+              ws.revert(id)
+              clearDiff()
+            }}
+            onDiff={(id) => setDiff(ws.diffAgainstCurrent(id))}
+          />
+          <AskPanel
+            canAsk={session !== null}
+            onAsk={(query) => ws.aiAsk(query)}
+            onNavigate={(title) => {
+              clearDiff()
+              setAiStatus(null)
+              ws.selectByTitle(title)
+            }}
+          />
+        </aside>
       </div>
-      <LinksPanel
-        outgoing={ws.outgoing}
-        backlinks={ws.backlinks}
-        canCreate={canWrite}
-        onNavigate={(title) => {
-          clearDiff()
-          setAiStatus(null)
-          ws.selectByTitle(title)
-        }}
-        onCreate={(title) => {
-          clearDiff()
-          setAiStatus(null)
-          ws.create(title)
-        }}
-      />
-      <TagsPanel
-        key={ws.activeId}
-        tags={ws.tags}
-        activeId={ws.activeId}
-        canEdit={canWrite && ws.activeNote !== null && ws.hydrated}
-        notesForTag={ws.notesForTag}
-        onNavigate={(id) => {
-          clearDiff()
-          setAiStatus(null)
-          ws.select(id)
-        }}
-        onAddTag={(tag) => {
-          clearDiff()
-          setAiStatus(null)
-          ws.addTag(tag)
-        }}
-        onRemoveTag={(tag) => {
-          clearDiff()
-          setAiStatus(null)
-          ws.removeTag(tag)
-        }}
-      />
-      <MetricsPanel metrics={ws.metrics} ai={ws.aiMetrics} />
-      <GraphView
-        nodes={ws.graph.nodes}
-        edges={ws.graph.edges}
-        activeId={ws.activeId}
-        canCreate={canWrite}
-        onNavigate={(id) => {
-          clearDiff()
-          setAiStatus(null)
-          ws.select(asNoteId(id))
-        }}
-        onCreate={(title) => {
-          clearDiff()
-          setAiStatus(null)
-          ws.create(title)
-        }}
-      />
-      <HistoryPanel
-        versions={ws.versions}
-        canEdit={canWrite}
-        onCommit={() => ws.commit()}
-        onRevert={(id) => {
-          ws.revert(id)
-          clearDiff()
-        }}
-        onDiff={(id) => setDiff(ws.diffAgainstCurrent(id))}
-      />
-      <AskPanel
-        canAsk={session !== null}
-        onAsk={(query) => ws.aiAsk(query)}
-        onNavigate={(title) => {
-          clearDiff()
-          setAiStatus(null)
-          ws.selectByTitle(title)
-        }}
-      />
-      {diff && <DiffView chunks={diff} />}
     </div>
   )
 }
