@@ -104,6 +104,67 @@ ul.tag-chips {
   color: var(--danger);
 }
 
+/* Quick switcher (Cmd-K) — a centered command palette over a dimming backdrop. The backdrop is a
+ * real (keyboard-dismissable) button behind the dialog; the dialog is a sibling above it. */
+.qs-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-overlay);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 12vh;
+}
+.qs-backdrop {
+  position: absolute;
+  inset: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: rgba(0, 0, 0, 0.4);
+  cursor: default;
+}
+.qs-dialog {
+  position: relative; /* sit above the backdrop */
+  width: min(560px, 92vw);
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-2);
+  overflow: hidden;
+}
+.qs-input {
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-lg);
+  background: var(--surface);
+}
+.qs-input:focus-visible {
+  outline: none; /* the dialog frame is the focus affordance here */
+}
+.qs-results {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-1);
+  overflow-y: auto;
+}
+.qs-results li > button {
+  width: 100%;
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+}
+.qs-empty {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  color: var(--muted);
+}
+
 /* Graph — token-driven so it follows light/dark (was hardcoded SVG hex). */
 .graph-edge {
   stroke: var(--border);

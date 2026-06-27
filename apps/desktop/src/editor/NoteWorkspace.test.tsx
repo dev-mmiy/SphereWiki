@@ -23,6 +23,16 @@ describe("NoteWorkspace", () => {
     expect(document.querySelector(".cm-editor")).not.toBeNull()
   })
 
+  it("opens the quick switcher on Cmd-K and dismisses it on Escape", () => {
+    render(<NoteWorkspace />)
+    expect(screen.queryByRole("dialog", { name: "Quick switcher" })).toBeNull()
+    // The shortcut is bound on window; a bubbling keydown from the document reaches it.
+    fireEvent.keyDown(document.body, { key: "k", metaKey: true })
+    expect(screen.getByRole("dialog", { name: "Quick switcher" })).toBeTruthy()
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Jump to note" }), { key: "Escape" })
+    expect(screen.queryByRole("dialog", { name: "Quick switcher" })).toBeNull()
+  })
+
   it("commits a version when the Commit button is clicked (editor role)", () => {
     render(<NoteWorkspace />)
     expect(screen.queryAllByText(/revert/i)).toHaveLength(0)

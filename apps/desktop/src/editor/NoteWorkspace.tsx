@@ -1,7 +1,7 @@
 import type { OnSaveResult } from "@spherewiki/ai"
 import { type AuthProvider, asNoteId, can, type DiffChunk, roleFor } from "@spherewiki/shared"
 import { CollapsiblePanel, ThemeToggle } from "@spherewiki/ui"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { appTitle } from "../app-info"
 import { devAuth, WORKSPACE_ID } from "../auth-dev"
 import { createAiMetricsRecorder } from "../metrics/ai-metrics"
@@ -15,6 +15,7 @@ import { LinksPanel } from "./links-panel"
 import { MetricsPanel } from "./metrics-panel"
 import { NoteEditor } from "./NoteEditor"
 import { NoteList } from "./note-list"
+import { QuickSwitcher } from "./quick-switcher"
 import { SearchPanel } from "./search-panel"
 import { TagsPanel } from "./tags-panel"
 import { useVaultWorkspace } from "./use-vault-workspace"
@@ -58,7 +59,20 @@ export function NoteWorkspace({ auth = devAuth() }: { auth?: AuthProvider }) {
   })
   const [diff, setDiff] = useState<readonly DiffChunk[] | null>(null)
   const [aiStatus, setAiStatus] = useState<string | null>(null)
+  const [quickOpen, setQuickOpen] = useState(false)
   const clearDiff = () => setDiff(null)
+
+  // Cmd/Ctrl-K toggles the quick switcher (keyboard-first "jump to note").
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
+        e.preventDefault()
+        setQuickOpen((o) => !o)
+      }
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [])
 
   const session = auth.session()
   const role = session ? roleFor(session, WORKSPACE_ID) : null
@@ -244,6 +258,18 @@ export function NoteWorkspace({ auth = devAuth() }: { auth?: AuthProvider }) {
           </CollapsiblePanel>
         </aside>
       </div>
+
+      <QuickSwitcher
+        open={quickOpen}
+        notes={ws.notes}
+        search={ws.search}
+        onNavigate={(id) => {
+          clearDiff()
+          setAiStatus(null)
+          ws.select(asNoteId(id))
+        }}
+        onClose={() => setQuickOpen(false)}
+      />
     </div>
   )
 }
