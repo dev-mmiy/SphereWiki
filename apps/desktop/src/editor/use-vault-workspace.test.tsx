@@ -731,6 +731,71 @@ describe("useVaultWorkspace", () => {
     second.unmount()
   })
 
+  it("full local loop survives a reload (create / link / commit / delete / mode → reopen)", async () => {
+    // Wire the whole local-mode persistence stack against one shared storage, like the real app:
+    // the vault (bodies), the registry (list + trash), version history, and session prefs — then
+    // remount to simulate a reload and assert every piece of state came back.
+    const registryPersistence = registryPersistenceStore()
+    const m = new Map<string, string>()
+    const vaultStorage = {
+      getItem: (k: string) => m.get(k) ?? null,
+      setItem: (k: string, v: string) => {
+        m.set(k, v)
+      },
+    }
+    const opts = {
+      persistVaultKey: "test:vault:loop",
+      persistVersionsKey: "test:versions:loop",
+      persistSessionKey: "test:session:loop",
+      vaultStorage,
+      registryPersistence,
+      newNoteId: ids("loop"),
+    }
+
+    const first = renderHook(() => useVaultWorkspace(opts))
+    await flush()
+    // Create a note that links to Home, commit a restore point, then edit past it.
+    act(() => first.result.current.create("Spec"))
+    const specId = first.result.current.activeId
+    act(() => first.result.current.activeNote?.setText("# Spec\n\nlinks to [[Home]]\n", LOCAL))
+    act(() => first.result.current.commit("baseline"))
+    const versionId = first.result.current.versions[0]?.id
+    if (versionId === undefined) throw new Error("expected a committed version")
+    act(() => first.result.current.activeNote?.setText("# Spec\n\nedited body\n", LOCAL))
+    // Trash a seed note and switch the AI mode.
+    const ideas = first.result.current.notes.find((n) => n.title === "Ideas")
+    act(() => {
+      if (ideas) first.result.current.remove(ideas.id)
+    })
+    act(() => first.result.current.setAiAutonomy("suggest"))
+    expect(first.result.current.activeId).toBe(specId)
+    first.unmount()
+
+    // ---- Reload ----
+    const second = renderHook(() => useVaultWorkspace(opts))
+    await flush()
+
+    // Session resumed: still on Spec, AI mode still "suggest".
+    expect(second.result.current.activeId).toBe(specId)
+    expect(second.result.current.aiAutonomy).toBe("suggest")
+    // Vault: Spec's last edited body survived.
+    expect(second.result.current.activeNote?.getText()).toContain("edited body")
+    // Registry: Ideas is still trashed (and restorable), not back in the list.
+    expect(second.result.current.notes.some((n) => n.title === "Ideas")).toBe(false)
+    expect(second.result.current.deleted.some((n) => n.title === "Ideas")).toBe(true)
+    // Version history: the restore point survived and reverting to it brings the link back.
+    expect(second.result.current.versions.some((v) => v.id === versionId)).toBe(true)
+    act(() => second.result.current.revert(versionId))
+    expect(second.result.current.activeNote?.getText()).toContain("links to [[Home]]")
+    // Derived graph follows the reverted body: Home now has a backlink from Spec.
+    const home = second.result.current.notes.find((n) => n.title === "Home")
+    act(() => {
+      if (home) second.result.current.select(home.id)
+    })
+    expect(second.result.current.backlinks.some((n) => n.title === "Spec")).toBe(true)
+    second.unmount()
+  })
+
   it("resumes the last active note and AI mode across a remount (session prefs)", () => {
     const m = new Map<string, string>()
     const vaultStorage = {
