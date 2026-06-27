@@ -146,6 +146,22 @@ describe("NoteWorkspace", () => {
     expect(within(nav).getByRole("button", { name: "Ideas" })).toBeTruthy()
   })
 
+  it("shows an onboarding empty state when every note is deleted, and creates from it", () => {
+    render(<NoteWorkspace auth={devAuth("editor")} />)
+    const nav = screen.getByRole("navigation")
+    // Delete all three seed notes (deleting the active one moves on to the next).
+    for (const title of ["Home", "Getting Started", "Ideas"]) {
+      fireEvent.click(within(nav).getByRole("button", { name: `Delete ${title}` }))
+    }
+    // The editor area is replaced by a guiding empty state, not left blank.
+    const empty = screen.getByRole("region", { name: "Empty workspace" })
+    expect(within(empty).getByText(/no notes yet/i)).toBeTruthy()
+    // The CTA creates a note → back to editing.
+    fireEvent.click(within(empty).getByRole("button", { name: /create your first note/i }))
+    expect(screen.queryByRole("region", { name: "Empty workspace" })).toBeNull()
+    expect(document.querySelector(".cm-editor")).not.toBeNull()
+  })
+
   it("renames the active note from the list (prompt → relabel)", () => {
     vi.spyOn(window, "prompt").mockReturnValue("Index")
     render(<NoteWorkspace auth={devAuth("editor")} />)

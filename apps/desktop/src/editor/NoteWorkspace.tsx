@@ -110,7 +110,25 @@ export function NoteWorkspace({ auth = devAuth() }: { auth?: AuthProvider }) {
           ws.select(asNoteId(id))
         }}
       />
-      {ws.activeNote && <NoteEditor key={ws.activeId} note={ws.activeNote} editable={canWrite} />}
+      {ws.notes.length === 0 ? (
+        <section className="empty-state" aria-label="Empty workspace">
+          <p>No notes yet.</p>
+          <button
+            type="button"
+            disabled={!canWrite}
+            onClick={() => {
+              clearDiff()
+              setAiStatus(null)
+              ws.create("Untitled")
+            }}
+          >
+            Create your first note
+          </button>
+          {ws.deleted.length > 0 && <p className="empty-hint">…or restore one from Trash above.</p>}
+        </section>
+      ) : (
+        ws.activeNote && <NoteEditor key={ws.activeId} note={ws.activeNote} editable={canWrite} />
+      )}
       <div className="ai-bar">
         <button type="button" onClick={runAi} disabled={!canWrite || ws.aiBusy}>
           Organize with AI
