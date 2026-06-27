@@ -4,7 +4,7 @@ interface StoredVault {
   notes: Array<{ id: string; title: string; body: string }>
 }
 
-type StorageLike = Pick<Storage, "getItem" | "setItem">
+export type StorageLike = Pick<Storage, "getItem" | "setItem">
 
 export interface LocalStorageVaultOptions {
   /** Storage key; scope per workspace so vaults never co-mingle. */
@@ -36,7 +36,7 @@ function defaultNewId(): string {
  * experimental native Web Storage without a file — expose a non-functional
  * localStorage; degrade gracefully instead of throwing.)
  */
-function resolveStorage(provided: StorageLike | undefined): StorageLike {
+export function resolveStorage(provided: StorageLike | undefined): StorageLike {
   if (provided !== undefined) return provided
   try {
     const ls = typeof window !== "undefined" ? window.localStorage : undefined

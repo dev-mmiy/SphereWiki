@@ -7,17 +7,31 @@ export interface MemoryVersionStoreOptions {
   now?: () => number
   /** Id generator — inject for deterministic tests. */
   newId?: () => string
+  /**
+   * Pre-load prior versions (e.g. from a persistent store on reload). Copied in, in commit order;
+   * the default id counter resumes past them so a new commit can't collide with a loaded `v*` id.
+   */
+  initial?: readonly Version[]
+  /**
+   * Called after each commit with the full version list, so a wrapper can persist it. The history
+   * logic stays here (engine-agnostic, platform-free); the wrapper supplies the storage.
+   */
+  onCommit?: (versions: readonly Version[]) => void
 }
 
-/** In-memory VersionStore for M1; persistence (DB/GCS) is wired in M3. */
+/**
+ * In-memory VersionStore for M1; durable wrappers layer on via `initial` + `onCommit` (the desktop
+ * localStorage store), and DB/GCS-backed stores land in M3 behind the same `VersionStore` contract.
+ */
 export function createMemoryVersionStore(
   engine: CrdtEngine,
   options: MemoryVersionStoreOptions = {},
 ): VersionStore {
   const now = options.now ?? (() => Date.now())
-  let counter = 0
+  // Resume past any pre-loaded versions so the default `v${n}` ids don't collide with loaded ones.
+  let counter = options.initial?.length ?? 0
   const newId = options.newId ?? (() => `v${(++counter).toString()}`)
-  const versions: Version[] = []
+  const versions: Version[] = options.initial !== undefined ? [...options.initial] : []
 
   const get = (id: string): Version | undefined => versions.find((v) => v.id === id)
 
@@ -39,6 +53,7 @@ export function createMemoryVersionStore(
         ...(previous !== undefined ? { parentId: previous.id } : {}),
       }
       versions.push(version)
+      options.onCommit?.(versions)
       return version
     },
     list: () => versions.slice(),

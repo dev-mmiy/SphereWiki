@@ -73,6 +73,7 @@ export function NoteWorkspace({ auth = devAuth() }: { auth?: AuthProvider }) {
   const ws = useVaultWorkspace({
     syncUrl: import.meta.env.VITE_SYNC_URL,
     persistVaultKey: `spherewiki:vault:${WORKSPACE_ID}`,
+    persistVersionsKey: `spherewiki:versions:${WORKSPACE_ID}`,
     localPersistence: connectLocalPersistence,
     connectRegistry: connectRegistryToServer,
     registryPersistence: connectRegistryPersistence,

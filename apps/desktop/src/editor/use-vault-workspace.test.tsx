@@ -731,6 +731,40 @@ describe("useVaultWorkspace", () => {
     second.unmount()
   })
 
+  it("persists version history across a remount (revert points survive a reload)", () => {
+    const m = new Map<string, string>()
+    const vaultStorage = {
+      getItem: (k: string) => m.get(k) ?? null,
+      setItem: (k: string, v: string) => {
+        m.set(k, v)
+      },
+    }
+    const opts = {
+      persistVaultKey: "test:vault:hist",
+      persistVersionsKey: "test:versions:hist",
+      vaultStorage,
+    }
+
+    const first = renderHook(() => useVaultWorkspace(opts))
+    act(() => first.result.current.activeNote?.setText("# Home\n\nv1 body\n", LOCAL))
+    act(() => first.result.current.commit("snap-1"))
+    expect(first.result.current.versions).toHaveLength(1)
+    const vid = first.result.current.versions[0]?.id
+    if (vid === undefined) throw new Error("expected a committed version")
+    first.unmount()
+
+    // Reload: a fresh hook backed by the SAME vault + version storage.
+    const second = renderHook(() => useVaultWorkspace(opts))
+    // The committed version survived the reload (loaded for the initially-active note).
+    expect(second.result.current.versions.some((v) => v.id === vid)).toBe(true)
+    expect(second.result.current.versions).toHaveLength(1)
+    // And it's a working revert point: change the body, revert to the snapshot, get it back.
+    act(() => second.result.current.activeNote?.setText("# Home\n\nchanged\n", LOCAL))
+    act(() => second.result.current.revert(vid))
+    expect(second.result.current.activeNote?.getText()).toContain("v1 body")
+    second.unmount()
+  })
+
   it("persists the registry across a remount with no sync — the trash survives a reload", async () => {
     const registryPersistence = registryPersistenceStore()
     // Share the vault store too, so the deleted note's body is still around after the "reload".

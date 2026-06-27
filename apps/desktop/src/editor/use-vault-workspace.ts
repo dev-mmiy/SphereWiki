@@ -67,6 +67,7 @@ import { type ConnectNote, connectNoteToServer } from "../sync/connect-server"
 import type { ConnectLocalPersistence, LocalDocPersistence } from "../sync/local-persistence"
 import type { ConnectRegistryPersistence } from "../sync/registry-persistence"
 import { createLocalStorageVault } from "../vault/local-vault"
+import { createLocalStorageVersionStore } from "../version/local-version-store"
 
 /** The reserved registry room id; note ids are UUIDs and can never equal it. */
 const REGISTRY_ROOM = "__registry__"
@@ -186,6 +187,11 @@ export interface UseVaultWorkspaceOptions {
   readonly registryPersistence?: ConnectRegistryPersistence
   /** When set, the vault is durably persisted to localStorage under this key (survives reload). */
   readonly persistVaultKey?: string
+  /**
+   * When set, each note's version history persists to localStorage under `${key}:${noteId}` (so
+   * revert/diff points survive a reload). Uses `vaultStorage` as its backend when provided.
+   */
+  readonly persistVersionsKey?: string
   /** Storage backend for the durable vault; defaults to window.localStorage (injectable for tests). */
   readonly vaultStorage?: Pick<Storage, "getItem" | "setItem">
   /** Note-id generator threaded into the durable vault (injectable for deterministic tests). */
@@ -266,15 +272,28 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
   const aiMetricsRecorder = aiMetricsRef.current
 
   const storesRef = useRef(new Map<NoteId, VersionStore>())
-  const storeFor = useCallback((id: NoteId): VersionStore => {
-    const stores = storesRef.current
-    let store = stores.get(id)
-    if (store === undefined) {
-      store = createMemoryVersionStore(yjsEngine)
-      stores.set(id, store)
-    }
-    return store
-  }, [])
+  // A note's version history persists locally when `persistVersionsKey` is set (so revert/diff
+  // points survive a reload), keyed per note; otherwise it's in-memory (tests / no-persistence).
+  const persistVersionsKey = options.persistVersionsKey
+  const vaultStorage = options.vaultStorage
+  const storeFor = useCallback(
+    (id: NoteId): VersionStore => {
+      const stores = storesRef.current
+      let store = stores.get(id)
+      if (store === undefined) {
+        store =
+          persistVersionsKey !== undefined
+            ? createLocalStorageVersionStore(yjsEngine, {
+                key: `${persistVersionsKey}:${id}`,
+                ...(vaultStorage !== undefined ? { storage: vaultStorage } : {}),
+              })
+            : createMemoryVersionStore(yjsEngine)
+        stores.set(id, store)
+      }
+      return store
+    },
+    [persistVersionsKey, vaultStorage],
+  )
 
   const [notes, setNotes] = useState<readonly NoteMeta[]>(() => vault.list())
   const [activeId, setActiveId] = useState<NoteId>(() => {
