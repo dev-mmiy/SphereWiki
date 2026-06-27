@@ -3,6 +3,7 @@ import { openYjsRegistry, type YjsBackedRegistry } from "@spherewiki/shared"
 import { act, renderHook } from "@testing-library/react"
 import { describe, expect, it } from "vitest"
 import { devAuth } from "../auth-dev"
+import { createAiMetricsRecorder } from "../metrics/ai-metrics"
 import type { ConnectRegistry } from "../sync/connect-registry"
 import type { ConnectNote } from "../sync/connect-server"
 import type { ConnectLocalPersistence } from "../sync/local-persistence"
@@ -243,6 +244,28 @@ describe("useVaultWorkspace", () => {
       await result.current.aiOrganize(session)
     })
     expect(result.current.tags.length).toBeGreaterThan(0) // the agent's tags now show in the UI
+  })
+
+  it("records AI applies and reverts (the kept-vs-reverted signal)", async () => {
+    const recorder = createAiMetricsRecorder() // in-memory
+    const { result } = renderHook(() => useVaultWorkspace({ aiMetricsRecorder: recorder }))
+    const session = devAuth("editor").session()
+    if (session === null) throw new Error("expected a session")
+    expect(result.current.aiMetrics.applied).toBe(0)
+
+    // The agent applies on the active note → one applied batch is recorded.
+    await act(async () => {
+      await result.current.aiOrganize(session)
+    })
+    expect(result.current.aiMetrics.applied).toBe(1)
+    expect(result.current.aiMetrics.reverted).toBe(0)
+
+    // The agent committed a pre-AI baseline then the AI version; reverting to the baseline
+    // rolls back the AI edit → one reverted batch is recorded.
+    const baseline = result.current.versions[0]
+    if (baseline === undefined) throw new Error("expected a pre-AI baseline version")
+    act(() => result.current.revert(baseline.id))
+    expect(result.current.aiMetrics.reverted).toBe(1)
   })
 
   it("groups visible notes by tag for navigation (notesForTag)", () => {

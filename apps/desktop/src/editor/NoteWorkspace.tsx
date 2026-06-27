@@ -2,6 +2,7 @@ import type { OnSaveResult } from "@spherewiki/ai"
 import { type AuthProvider, asNoteId, can, type DiffChunk, roleFor } from "@spherewiki/shared"
 import { useState } from "react"
 import { devAuth, WORKSPACE_ID } from "../auth-dev"
+import { createAiMetricsRecorder } from "../metrics/ai-metrics"
 import { connectRegistryToServer } from "../sync/connect-registry"
 import { connectLocalPersistence } from "../sync/local-persistence"
 import { connectRegistryPersistence } from "../sync/registry-persistence"
@@ -34,6 +35,15 @@ function describeResult(r: OnSaveResult): string {
 }
 
 export function NoteWorkspace({ auth = devAuth() }: { auth?: AuthProvider }) {
+  // Kept-vs-reverted counters persist (localStorage) so they accumulate across sessions. Keyed by
+  // the single dev WORKSPACE_ID today; when real multi-workspace switching lands, derive this key
+  // from the same workspaceId the hook uses so per-workspace metrics never share a bucket.
+  const [aiMetricsRecorder] = useState(() =>
+    createAiMetricsRecorder({
+      storage: window.localStorage,
+      key: `spherewiki:aimetrics:${WORKSPACE_ID}`,
+    }),
+  )
   // Durable local vault (survives reload, offline); opt-in live sync via VITE_SYNC_URL.
   // When syncing, a local CRDT cache (IndexedDB) keeps the room readable offline.
   const ws = useVaultWorkspace({
@@ -42,6 +52,7 @@ export function NoteWorkspace({ auth = devAuth() }: { auth?: AuthProvider }) {
     localPersistence: connectLocalPersistence,
     connectRegistry: connectRegistryToServer,
     registryPersistence: connectRegistryPersistence,
+    aiMetricsRecorder,
   })
   const [diff, setDiff] = useState<readonly DiffChunk[] | null>(null)
   const [aiStatus, setAiStatus] = useState<string | null>(null)
@@ -143,7 +154,7 @@ export function NoteWorkspace({ auth = devAuth() }: { auth?: AuthProvider }) {
           ws.removeTag(tag)
         }}
       />
-      <MetricsPanel metrics={ws.metrics} />
+      <MetricsPanel metrics={ws.metrics} ai={ws.aiMetrics} />
       <GraphView
         nodes={ws.graph.nodes}
         edges={ws.graph.edges}

@@ -19,7 +19,7 @@
 | **M3b** Real WS super-peer + durable storage + app sync | ◐ | local done over real sockets; cloud control plane deferred (credentials) |
 | **M4a** On-save AI agent + RAG (local) | ✅ | heuristic suggester + deterministic embedder/answerer, no credentials |
 | **M4b** Real AI backends (ONNX / pgvector / Claude) | ⏳ | needs a model download + a Claude key |
-| **M5** Dogfood hardening + success instrumentation | ◐ | graph-growth metrics shipped; kept-vs-reverted + reliability remain |
+| **M5** Dogfood hardening + success instrumentation | ◐ | success metrics shipped (graph-growth + kept-vs-reverted); reliability hardening remains |
 
 **Where we are:** every *local, no-credentials* slice of MVP capability is in place. The desktop app
 runs as a web build (`pnpm dev`) with the CodeMirror↔Yjs editor, a multi-note vault, wikilinks /
@@ -56,7 +56,8 @@ follow-ups and grew to span Notes / AI / sync hardening. Full detail is in the g
 - ✅ **Frontmatter-preserving AI edits.** The on-save agent's auto-link/auto-tag no longer re-serializes the whole frontmatter: `applyTagSuggestions` delegates to `addNoteTag`, and `buildAgentEdit` applies links via a new shared **`withNoteBody`** (body-only edit, frontmatter text preserved byte-for-byte). Closes the M4a *frontmatter canonicalization* limitation codebase-wide. Backed by shared `splitFrontmatter` / `withNoteBody`.
 
 ### Metrics / dogfooding (M5)
-- ✅ **Workspace graph-growth metrics.** A pure shared `buildWorkspaceMetrics(graph, tags)` summarizes the dogfooding "is the wiki growing?" signal from the derived graph model + tag index: **notes**, resolved **links**, **unwritten** (frontier) links, distinct **tags**, and **tagged** notes — all visible-scoped (trash excluded) and idempotent. The desktop `MetricsPanel` shows the readout above the graph. Tested: shared (counts incl. dangling/tag de-dup/empty), hook (reflects the seed; tracks a tag + frontier edit), component + integration. *Remaining for M5 instrumentation:* kept-vs-reverted + AI-contribution share (need persistent version/attribution data — see Next up).
+- ✅ **Workspace graph-growth metrics.** A pure shared `buildWorkspaceMetrics(graph, tags)` summarizes the dogfooding "is the wiki growing?" signal from the derived graph model + tag index: **notes**, resolved **links**, **unwritten** (frontier) links, distinct **tags**, and **tagged** notes — all visible-scoped (trash excluded) and idempotent. The desktop `MetricsPanel` shows the readout above the graph. Tested: shared (counts incl. dangling/tag de-dup/empty), hook (reflects the seed; tracks a tag + frontier edit), component + integration.
+- ✅ **Kept-vs-reverted instrumentation.** The headline hypothesis metric (≥ ~70% kept). Shared `countAiVersionsAfter(versions, targetId)` (AI edits a revert rolls back) + `aiKeptRate(applied, reverted)` (clamped to `[0,1]`, null before any apply). A desktop **`AiMetricsRecorder`** seam accumulates applied / reverted / links / tags, **persisted to localStorage** so totals survive reloads (per workspace). The hook records an apply on each agent run that applied, and a revert when a revert rolls back ≥1 AI version; `MetricsPanel` shows `kept %` + contribution. Tested: shared helpers (counts/clamp/edge cases), recorder (accumulate/persist/malformed-blob), hook (apply→`applied`, revert→`reverted`), panel. **Adversarially reviewed** — purely observational (never touches the edit/version path), no real bugs; two low future-proofing notes folded in (test-isolation `localStorage.clear()`; recorder key must track the hook's `workspaceId` once multi-workspace lands). *Approximation (documented):* running totals can over-count on revert→re-apply→revert (clamp keeps the % sane); a precise per-edit ledger lands with the version-store DB.
 
 ---
 
@@ -85,8 +86,8 @@ Surfaced by adversarial review; each is additive and lands behind the existing s
 ## Next up
 
 ### Local-testable now (no credentials)
-1. **M5 — kept-vs-reverted instrumentation** (the remaining half; graph-growth metrics already shipped). Measure AI suggestions **kept-vs-reverted** (target ≥ ~70% kept) and **AI contribution share** of the graph. Needs persistent per-note version/attribution data that records when an AI version is kept vs reverted — leans on the version-store persistence that lands with the DB (M3b/M4b), or a lightweight local event recorder behind a seam as an interim. *High value — gates MVP exit.*
-2. **M5 — reliability hardening.** Stress the data invariants the MVP can't compromise: no lost edits under concurrent sync, revert always works, isolation holds. Add convergence/property tests and an onboarding pass.
+1. **M5 — reliability hardening.** Stress the data invariants the MVP can't compromise: no lost edits under concurrent sync, revert always works, isolation holds. Add convergence/property tests and an onboarding pass. *Now the main local work left toward MVP exit.*
+2. **M5 — precise kept-vs-reverted ledger (DB-dependent).** The shipped metric uses persisted **running totals** (an approximation that can over-count on revert→re-apply→revert). A precise per-edit ledger (each AI suggestion's final kept/reverted outcome) needs persistent per-note version history — lands with the version-store DB (M3b/M4b). Also: AI **contribution share** of the graph (AI- vs human-authored links/tags) needs the same persistent attribution.
 3. **Polish candidates (smaller, optional):** wikilink autocomplete in the editor (`[[` → title suggestions); a Cmd-K quick-switcher over the existing search; surfacing the AI "suggest" autonomy mode (review-before-apply) in the UI; client-side room-auth token threading (inert until WorkOS, but readies the seam).
 
 ### Gated — unblock when the dependency is available

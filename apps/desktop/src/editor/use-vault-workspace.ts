@@ -23,6 +23,7 @@ import {
   buildSearchIndex,
   buildTagIndex,
   buildWorkspaceMetrics,
+  countAiVersionsAfter,
   createMemoryVault,
   createMemoryVersionStore,
   type DiffChunk,
@@ -53,6 +54,11 @@ import {
 } from "@spherewiki/shared"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { WORKSPACE_ID } from "../auth-dev"
+import {
+  type AiEditMetrics,
+  type AiMetricsRecorder,
+  createAiMetricsRecorder,
+} from "../metrics/ai-metrics"
 import { type ConnectRegistry, connectRegistryToServer } from "../sync/connect-registry"
 import { type ConnectNote, connectNoteToServer } from "../sync/connect-server"
 import type { ConnectLocalPersistence, LocalDocPersistence } from "../sync/local-persistence"
@@ -133,6 +139,8 @@ export interface VaultWorkspace {
   aiOrganize: (session: Session) => Promise<OnSaveResult>
   /** True while an AI run is in flight (so the UI can prevent concurrent runs). */
   readonly aiBusy: boolean
+  /** Accumulated kept-vs-reverted counters for the AI agent's edits (the M5 dogfooding signal). */
+  readonly aiMetrics: AiEditMetrics
   /** RAG question-answering scoped to this workspace; returns a cited answer. */
   aiAsk: (query: string) => Promise<RagAnswer>
 }
@@ -162,6 +170,8 @@ export interface UseVaultWorkspaceOptions {
   readonly vaultStorage?: Pick<Storage, "getItem" | "setItem">
   /** Note-id generator threaded into the durable vault (injectable for deterministic tests). */
   readonly newNoteId?: () => string
+  /** Kept-vs-reverted recorder (localStorage-backed in the app; an in-memory fake in tests). */
+  readonly aiMetricsRecorder?: AiMetricsRecorder
 }
 
 /**
@@ -227,6 +237,14 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
   }
   const aiBusyRef = useRef(false)
 
+  // Kept-vs-reverted recorder (the M5 dogfooding signal): accumulates the agent's applied vs
+  // reverted edit batches. Injected (localStorage-backed) by the app; an in-memory default in tests.
+  const aiMetricsRef = useRef<AiMetricsRecorder | null>(null)
+  if (aiMetricsRef.current === null) {
+    aiMetricsRef.current = options.aiMetricsRecorder ?? createAiMetricsRecorder()
+  }
+  const aiMetricsRecorder = aiMetricsRef.current
+
   const storesRef = useRef(new Map<NoteId, VersionStore>())
   const storeFor = useCallback((id: NoteId): VersionStore => {
     const stores = storesRef.current
@@ -256,6 +274,7 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
   const [tagIndex, setTagIndex] = useState<TagIndex>(() => computeTags(vault))
   const [versions, setVersions] = useState<readonly Version[]>([])
   const [aiBusy, setAiBusy] = useState(false)
+  const [aiMetrics, setAiMetrics] = useState<AiEditMetrics>(() => aiMetricsRecorder.snapshot())
   const [deleted, setDeleted] = useState<readonly NoteMeta[]>([])
 
   // Live active id, read by callbacks that outlive a render: an in-flight AI run (to tell if the
@@ -646,7 +665,14 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
   }
   const revert = (id: string): void => {
     if (activeNote === null) return
-    const past = storeFor(activeId).open(id)
+    const store = storeFor(activeId)
+    // Kept-vs-reverted signal: reverting to `id` rolls back the AI versions committed after it.
+    const undoneAi = countAiVersionsAfter(store.list(), id)
+    if (undoneAi > 0) {
+      aiMetricsRecorder.recordRevert(undoneAi)
+      setAiMetrics(aiMetricsRecorder.snapshot())
+    }
+    const past = store.open(id)
     try {
       activeNote.setText(past.getText(), LOCAL)
     } finally {
@@ -698,6 +724,11 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
       vault.write(targetId, note.getText())
       setGraph(computeGraph(vault))
       setTagIndex(computeTags(vault))
+      // Record the applied AI edit batch for the kept-vs-reverted signal.
+      if (result.applied) {
+        aiMetricsRecorder.recordApply({ links: result.links.length, tags: result.tags.length })
+        setAiMetrics(aiMetricsRecorder.snapshot())
+      }
       // Only refresh the history panel if this note is still the active one.
       if (activeIdRef.current === targetId) setVersions(storeFor(targetId).list())
       return result
@@ -742,6 +773,7 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     diffAgainstCurrent,
     aiOrganize,
     aiBusy,
+    aiMetrics,
     aiAsk,
   }
 }
