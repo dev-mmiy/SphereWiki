@@ -66,6 +66,19 @@ describe("QuickSwitcher", () => {
     expect(document.activeElement).toBe(outside) // focus returned to where it was
   })
 
+  it("traps Tab focus within the dialog so it can't escape to the page (modal a11y)", () => {
+    setup()
+    const input = screen.getByRole("textbox", { name: "Jump to note" })
+    expect(document.activeElement).toBe(input) // first focusable on open
+    // Shift+Tab at the first focusable wraps to the last result button.
+    fireEvent.keyDown(input, { key: "Tab", shiftKey: true })
+    const last = screen.getByRole("button", { name: "Roadmap" })
+    expect(document.activeElement).toBe(last)
+    // Tab at the last focusable wraps back to the first (the input).
+    fireEvent.keyDown(last, { key: "Tab" })
+    expect(document.activeElement).toBe(input)
+  })
+
   it("lists all notes on an empty query and focuses the input", () => {
     setup()
     const input = screen.getByRole("textbox", { name: "Jump to note" })

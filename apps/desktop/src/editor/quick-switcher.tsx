@@ -26,6 +26,7 @@ export function QuickSwitcher({
   const [query, setQuery] = useState("")
   const [active, setActive] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
 
   // On open: reset the query + selection and move focus into the dialog; on close: restore focus
   // to whatever was focused before (standard modal a11y, so keyboard users aren't dumped at the top).
@@ -51,6 +52,29 @@ export function QuickSwitcher({
   const choose = (id: string): void => {
     onNavigate(id)
     onClose()
+  }
+
+  // Trap Tab within the dialog so keyboard focus can't wander to the page behind the modal. Only
+  // the boundaries wrap (Shift+Tab at the first → last, Tab at the last → first); arrow/Enter/Esc
+  // stay on the input handler. Lives at the dialog level so it fires whichever child holds focus.
+  const onTabTrap = (e: React.KeyboardEvent): void => {
+    if (e.key !== "Tab") return
+    const dialog = dialogRef.current
+    if (!dialog) return
+    const focusables = Array.from(dialog.querySelectorAll<HTMLElement>("input, button")).filter(
+      (el) => !el.hasAttribute("disabled"),
+    )
+    const first = focusables[0]
+    const last = focusables[focusables.length - 1]
+    if (!first || !last) return
+    const activeEl = document.activeElement
+    if (e.shiftKey && activeEl === first) {
+      e.preventDefault()
+      last.focus()
+    } else if (!e.shiftKey && activeEl === last) {
+      e.preventDefault()
+      first.focus()
+    }
   }
 
   const onKeyDown = (e: React.KeyboardEvent): void => {
@@ -80,7 +104,14 @@ export function QuickSwitcher({
         aria-label="Close quick switcher"
         onClick={onClose}
       />
-      <div className="qs-dialog" role="dialog" aria-modal="true" aria-label="Quick switcher">
+      <div
+        ref={dialogRef}
+        className="qs-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Quick switcher"
+        onKeyDown={onTabTrap}
+      >
         <input
           ref={inputRef}
           type="text"
