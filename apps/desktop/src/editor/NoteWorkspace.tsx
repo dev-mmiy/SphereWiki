@@ -66,6 +66,10 @@ export function NoteWorkspace({ auth = devAuth() }: { auth?: AuthProvider }) {
   // so the review panel remounts with a fresh (all-checked) selection for each new suggestion set.
   const [pending, setPending] = useState<OnSaveResult["suggested"] | null>(null)
   const [pendingKey, setPendingKey] = useState(0)
+  // Focus mode: either side pane can be folded away to widen the editor (and to stay usable in a
+  // narrow window). Both default open.
+  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [railOpen, setRailOpen] = useState(true)
   const clearDiff = () => setDiff(null)
 
   // Cmd/Ctrl-K toggles the quick switcher (keyboard-first "jump to note").
@@ -115,6 +119,15 @@ export function NoteWorkspace({ auth = devAuth() }: { auth?: AuthProvider }) {
   return (
     <div className="app">
       <header className="topbar">
+        <button
+          type="button"
+          className="pane-toggle"
+          aria-label="Toggle sidebar"
+          aria-pressed={sidebarOpen}
+          onClick={() => setSidebarOpen((o) => !o)}
+        >
+          ◧
+        </button>
         <h1 className="brand">{appTitle()}</h1>
         <div className="topbar-meta">
           <SyncStatus status={ws.syncStatus} />
@@ -122,47 +135,58 @@ export function NoteWorkspace({ auth = devAuth() }: { auth?: AuthProvider }) {
             {session ? `${session.account.email} · ${role ?? "no access"}` : "signed out"}
           </span>
           <ThemeToggle />
+          <button
+            type="button"
+            className="pane-toggle"
+            aria-label="Toggle details panel"
+            aria-pressed={railOpen}
+            onClick={() => setRailOpen((o) => !o)}
+          >
+            ◨
+          </button>
         </div>
       </header>
 
-      <div className="panes">
-        <aside className="sidebar">
-          <SearchPanel
-            search={ws.search}
-            onNavigate={(id) => {
-              clearDiff()
-              setAiStatus(null)
-              ws.select(asNoteId(id))
-            }}
-          />
-          <NoteList
-            notes={ws.notes}
-            activeId={ws.activeId}
-            canCreate={canWrite}
-            canEdit={canWrite}
-            deleted={ws.deleted}
-            onSelect={(id) => {
-              clearDiff()
-              setAiStatus(null)
-              ws.select(id)
-            }}
-            onCreate={() => ws.create(`Note ${ws.notes.length + 1}`)}
-            onDelete={(id) => {
-              clearDiff()
-              setAiStatus(null)
-              ws.remove(id)
-            }}
-            onRename={(id) => {
-              const current = ws.notes.find((m) => m.id === id)?.title ?? ""
-              const next = window.prompt("Rename note", current)
-              if (next === null || next.trim() === "") return
-              clearDiff()
-              setAiStatus(null)
-              ws.rename(id, next)
-            }}
-            onRestore={(id) => ws.restore(id)}
-          />
-        </aside>
+      <div className="panes" data-sidebar={sidebarOpen} data-rail={railOpen}>
+        {sidebarOpen && (
+          <aside className="sidebar">
+            <SearchPanel
+              search={ws.search}
+              onNavigate={(id) => {
+                clearDiff()
+                setAiStatus(null)
+                ws.select(asNoteId(id))
+              }}
+            />
+            <NoteList
+              notes={ws.notes}
+              activeId={ws.activeId}
+              canCreate={canWrite}
+              canEdit={canWrite}
+              deleted={ws.deleted}
+              onSelect={(id) => {
+                clearDiff()
+                setAiStatus(null)
+                ws.select(id)
+              }}
+              onCreate={() => ws.create(`Note ${ws.notes.length + 1}`)}
+              onDelete={(id) => {
+                clearDiff()
+                setAiStatus(null)
+                ws.remove(id)
+              }}
+              onRename={(id) => {
+                const current = ws.notes.find((m) => m.id === id)?.title ?? ""
+                const next = window.prompt("Rename note", current)
+                if (next === null || next.trim() === "") return
+                clearDiff()
+                setAiStatus(null)
+                ws.rename(id, next)
+              }}
+              onRestore={(id) => ws.restore(id)}
+            />
+          </aside>
+        )}
 
         <main className="editor-pane">
           {ws.notes.length === 0 ? (
@@ -226,93 +250,95 @@ export function NoteWorkspace({ auth = devAuth() }: { auth?: AuthProvider }) {
           {diff && <DiffView chunks={diff} />}
         </main>
 
-        <aside className="rail">
-          <CollapsiblePanel title="Links">
-            <LinksPanel
-              outgoing={ws.outgoing}
-              backlinks={ws.backlinks}
-              canCreate={canWrite}
-              onNavigate={(title) => {
-                clearDiff()
-                setAiStatus(null)
-                ws.selectByTitle(title)
-              }}
-              onCreate={(title) => {
-                clearDiff()
-                setAiStatus(null)
-                ws.create(title)
-              }}
-            />
-          </CollapsiblePanel>
-          <CollapsiblePanel title="Tags">
-            <TagsPanel
-              key={ws.activeId}
-              tags={ws.tags}
-              activeId={ws.activeId}
-              canEdit={canWrite && ws.activeNote !== null && ws.hydrated}
-              notesForTag={ws.notesForTag}
-              onNavigate={(id) => {
-                clearDiff()
-                setAiStatus(null)
-                ws.select(id)
-              }}
-              onAddTag={(tag) => {
-                clearDiff()
-                setAiStatus(null)
-                ws.addTag(tag)
-              }}
-              onRemoveTag={(tag) => {
-                clearDiff()
-                setAiStatus(null)
-                ws.removeTag(tag)
-              }}
-            />
-          </CollapsiblePanel>
-          <CollapsiblePanel title="Workspace">
-            <MetricsPanel metrics={ws.metrics} ai={ws.aiMetrics} />
-          </CollapsiblePanel>
-          <CollapsiblePanel title="Graph">
-            <GraphView
-              nodes={ws.graph.nodes}
-              edges={ws.graph.edges}
-              activeId={ws.activeId}
-              canCreate={canWrite}
-              onNavigate={(id) => {
-                clearDiff()
-                setAiStatus(null)
-                ws.select(asNoteId(id))
-              }}
-              onCreate={(title) => {
-                clearDiff()
-                setAiStatus(null)
-                ws.create(title)
-              }}
-            />
-          </CollapsiblePanel>
-          <CollapsiblePanel title="History">
-            <HistoryPanel
-              versions={ws.versions}
-              canEdit={canWrite}
-              onCommit={() => ws.commit()}
-              onRevert={(id) => {
-                ws.revert(id)
-                clearDiff()
-              }}
-              onDiff={(id) => setDiff(ws.diffAgainstCurrent(id))}
-            />
-          </CollapsiblePanel>
-          <CollapsiblePanel title="Ask">
-            <AskPanel
-              canAsk={session !== null}
-              onAsk={(query) => ws.aiAsk(query)}
-              onNavigate={(title) => {
-                clearDiff()
-                setAiStatus(null)
-                ws.selectByTitle(title)
-              }}
-            />
-          </CollapsiblePanel>
-        </aside>
+        {railOpen && (
+          <aside className="rail">
+            <CollapsiblePanel title="Links">
+              <LinksPanel
+                outgoing={ws.outgoing}
+                backlinks={ws.backlinks}
+                canCreate={canWrite}
+                onNavigate={(title) => {
+                  clearDiff()
+                  setAiStatus(null)
+                  ws.selectByTitle(title)
+                }}
+                onCreate={(title) => {
+                  clearDiff()
+                  setAiStatus(null)
+                  ws.create(title)
+                }}
+              />
+            </CollapsiblePanel>
+            <CollapsiblePanel title="Tags">
+              <TagsPanel
+                key={ws.activeId}
+                tags={ws.tags}
+                activeId={ws.activeId}
+                canEdit={canWrite && ws.activeNote !== null && ws.hydrated}
+                notesForTag={ws.notesForTag}
+                onNavigate={(id) => {
+                  clearDiff()
+                  setAiStatus(null)
+                  ws.select(id)
+                }}
+                onAddTag={(tag) => {
+                  clearDiff()
+                  setAiStatus(null)
+                  ws.addTag(tag)
+                }}
+                onRemoveTag={(tag) => {
+                  clearDiff()
+                  setAiStatus(null)
+                  ws.removeTag(tag)
+                }}
+              />
+            </CollapsiblePanel>
+            <CollapsiblePanel title="Workspace">
+              <MetricsPanel metrics={ws.metrics} ai={ws.aiMetrics} />
+            </CollapsiblePanel>
+            <CollapsiblePanel title="Graph">
+              <GraphView
+                nodes={ws.graph.nodes}
+                edges={ws.graph.edges}
+                activeId={ws.activeId}
+                canCreate={canWrite}
+                onNavigate={(id) => {
+                  clearDiff()
+                  setAiStatus(null)
+                  ws.select(asNoteId(id))
+                }}
+                onCreate={(title) => {
+                  clearDiff()
+                  setAiStatus(null)
+                  ws.create(title)
+                }}
+              />
+            </CollapsiblePanel>
+            <CollapsiblePanel title="History">
+              <HistoryPanel
+                versions={ws.versions}
+                canEdit={canWrite}
+                onCommit={() => ws.commit()}
+                onRevert={(id) => {
+                  ws.revert(id)
+                  clearDiff()
+                }}
+                onDiff={(id) => setDiff(ws.diffAgainstCurrent(id))}
+              />
+            </CollapsiblePanel>
+            <CollapsiblePanel title="Ask">
+              <AskPanel
+                canAsk={session !== null}
+                onAsk={(query) => ws.aiAsk(query)}
+                onNavigate={(title) => {
+                  clearDiff()
+                  setAiStatus(null)
+                  ws.selectByTitle(title)
+                }}
+              />
+            </CollapsiblePanel>
+          </aside>
+        )}
       </div>
 
       <QuickSwitcher

@@ -30,6 +30,26 @@ describe("NoteWorkspace", () => {
     expect(within(mode).getByRole("option", { name: "Suggest" })).toBeTruthy()
   })
 
+  it("folds the sidebar away and back (focus mode)", () => {
+    render(<NoteWorkspace />)
+    expect(screen.queryByRole("region", { name: "Search" })).not.toBeNull()
+    const toggle = screen.getByRole("button", { name: "Toggle sidebar" })
+    fireEvent.click(toggle)
+    expect(screen.queryByRole("region", { name: "Search" })).toBeNull()
+    fireEvent.click(toggle)
+    expect(screen.queryByRole("region", { name: "Search" })).not.toBeNull()
+  })
+
+  it("folds the details rail away and back (focus mode)", () => {
+    render(<NoteWorkspace />)
+    expect(screen.queryByRole("region", { name: "Workspace metrics" })).not.toBeNull()
+    const toggle = screen.getByRole("button", { name: "Toggle details panel" })
+    fireEvent.click(toggle)
+    expect(screen.queryByRole("region", { name: "Workspace metrics" })).toBeNull()
+    fireEvent.click(toggle)
+    expect(screen.queryByRole("region", { name: "Workspace metrics" })).not.toBeNull()
+  })
+
   it("opens the quick switcher on Cmd-K and dismisses it on Escape", () => {
     render(<NoteWorkspace />)
     expect(screen.queryByRole("dialog", { name: "Quick switcher" })).toBeNull()

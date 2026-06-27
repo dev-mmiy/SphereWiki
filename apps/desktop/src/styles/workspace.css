@@ -23,6 +23,17 @@
   margin: 0;
   font-size: var(--text-lg);
 }
+/* Side-pane fold toggles (◧ sidebar / ◨ rail). Pressed = pane open. */
+.pane-toggle {
+  color: var(--muted);
+  font-size: var(--text-lg);
+  line-height: 1;
+  padding: 0 var(--space-1);
+}
+.pane-toggle[aria-pressed="true"] {
+  color: var(--text);
+  background: transparent; /* color-only state; override the global pressed background */
+}
 .topbar-meta {
   margin-left: auto;
   display: flex;
@@ -34,11 +45,34 @@
   font-size: var(--text-sm);
 }
 
-/* 3-pane body */
+/* 3-pane body. Columns track which side panes are open (focus mode); the children are
+ * conditionally rendered to match, so the grid never leaves an empty track. */
 .panes {
   display: grid;
   grid-template-columns: 256px minmax(0, 1fr) 300px;
   min-height: 0;
+}
+.panes[data-sidebar="false"] {
+  grid-template-columns: minmax(0, 1fr) 300px;
+}
+.panes[data-rail="false"] {
+  grid-template-columns: 256px minmax(0, 1fr);
+}
+.panes[data-sidebar="false"][data-rail="false"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* Narrower windows: tighten the side columns so the editor keeps usable width. */
+@media (max-width: 1080px) {
+  .panes {
+    grid-template-columns: 208px minmax(0, 1fr) 248px;
+  }
+  .panes[data-sidebar="false"] {
+    grid-template-columns: minmax(0, 1fr) 248px;
+  }
+  .panes[data-rail="false"] {
+    grid-template-columns: 208px minmax(0, 1fr);
+  }
 }
 .sidebar,
 .rail,
