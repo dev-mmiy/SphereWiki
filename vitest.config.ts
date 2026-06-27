@@ -45,6 +45,16 @@ export default defineConfig({
           setupFiles: [path.resolve(import.meta.dirname, "apps/desktop/vitest.setup.ts")],
         },
       },
+      {
+        plugins: [react()],
+        resolve: { alias },
+        test: {
+          name: "web",
+          include: ["apps/web/src/**/*.test.{ts,tsx}"],
+          environment: "jsdom",
+          setupFiles: [path.resolve(import.meta.dirname, "apps/web/vitest.setup.ts")],
+        },
+      },
     ],
   },
 })

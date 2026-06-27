@@ -1,0 +1,101 @@
+/*
+ * Web client shell styling. App-specific layout only — the themed canvas (background, text, font,
+ * focus ring) comes from `@spherewiki/ui/base.css`, and all colors/spacing are design tokens, so
+ * this shell tracks light/dark and stays visually consistent with desktop. The primitive class
+ * names (`.theme-toggle`, `.rail-panel*`) are styled here too, mirroring desktop's component pass.
+ */
+.web-app {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  height: 100vh;
+}
+
+.web-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.web-brand {
+  margin: 0;
+  font-size: var(--text-lg);
+}
+.web-topbar-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.web-tag {
+  font-size: var(--text-xs);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0 var(--space-2);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.web-panes {
+  display: grid;
+  grid-template-columns: 16rem 1fr 18rem;
+  min-height: 0;
+}
+.web-sidebar,
+.web-rail {
+  padding: var(--space-3);
+  overflow: auto;
+}
+.web-sidebar {
+  border-right: 1px solid var(--border);
+}
+.web-rail {
+  border-left: 1px solid var(--border);
+}
+.web-main {
+  padding: var(--space-5);
+  overflow: auto;
+}
+
+.web-empty {
+  max-width: 42rem;
+  margin: var(--space-6) auto 0;
+  padding: var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+.web-muted {
+  margin: 0;
+  color: var(--muted);
+}
+
+@media (max-width: 1080px) {
+  .web-panes {
+    grid-template-columns: 13rem 1fr 14rem;
+  }
+}
+
+/* Shared primitives — styled here as desktop does, so the shell looks intentional. */
+.theme-toggle {
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  cursor: pointer;
+}
+.rail-panel {
+  margin-bottom: var(--space-3);
+}
+.rail-panel-summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: var(--text-sm);
+  color: var(--muted);
+  padding: var(--space-1) 0;
+}
+.rail-panel-body {
+  padding: var(--space-2) 0;
+}
