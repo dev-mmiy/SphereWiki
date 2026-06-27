@@ -72,12 +72,17 @@ export function NoteWorkspace({ auth = devAuth() }: { auth?: AuthProvider }) {
   const [railOpen, setRailOpen] = useState(true)
   const clearDiff = () => setDiff(null)
 
-  // Cmd/Ctrl-K toggles the quick switcher (keyboard-first "jump to note").
+  // Global keyboard shortcuts: Cmd/Ctrl-K jump-to-note, Cmd/Ctrl-B fold the sidebar (focus mode).
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
+      if (!(e.metaKey || e.ctrlKey)) return
+      const key = e.key.toLowerCase()
+      if (key === "k") {
         e.preventDefault()
         setQuickOpen((o) => !o)
+      } else if (key === "b") {
+        e.preventDefault()
+        setSidebarOpen((o) => !o)
       }
     }
     window.addEventListener("keydown", onKey)
@@ -124,6 +129,7 @@ export function NoteWorkspace({ auth = devAuth() }: { auth?: AuthProvider }) {
           className="pane-toggle"
           aria-label="Toggle sidebar"
           aria-pressed={sidebarOpen}
+          title="Toggle sidebar (⌘/Ctrl-B)"
           onClick={() => setSidebarOpen((o) => !o)}
         >
           ◧

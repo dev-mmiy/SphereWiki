@@ -32,10 +32,38 @@ function setup(open = true) {
   return { onNavigate, onClose }
 }
 
+function Harness({ open }: { open: boolean }) {
+  return (
+    <>
+      <button type="button">outside</button>
+      <QuickSwitcher
+        open={open}
+        notes={NOTES}
+        search={search}
+        onNavigate={vi.fn()}
+        onClose={vi.fn()}
+      />
+    </>
+  )
+}
+
 describe("QuickSwitcher", () => {
   it("renders nothing when closed", () => {
     setup(false)
     expect(screen.queryByRole("dialog")).toBeNull()
+  })
+
+  it("moves focus to the input on open and restores it on close (modal a11y)", () => {
+    const { rerender } = render(<Harness open={false} />)
+    const outside = screen.getByRole("button", { name: "outside" })
+    outside.focus()
+    expect(document.activeElement).toBe(outside)
+
+    rerender(<Harness open={true} />)
+    expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "Jump to note" }))
+
+    rerender(<Harness open={false} />)
+    expect(document.activeElement).toBe(outside) // focus returned to where it was
   })
 
   it("lists all notes on an empty query and focuses the input", () => {

@@ -40,6 +40,15 @@ describe("NoteWorkspace", () => {
     expect(screen.queryByRole("region", { name: "Search" })).not.toBeNull()
   })
 
+  it("toggles the sidebar with Cmd/Ctrl-B", () => {
+    render(<NoteWorkspace />)
+    expect(screen.queryByRole("region", { name: "Search" })).not.toBeNull()
+    fireEvent.keyDown(document.body, { key: "b", metaKey: true })
+    expect(screen.queryByRole("region", { name: "Search" })).toBeNull()
+    fireEvent.keyDown(document.body, { key: "b", ctrlKey: true })
+    expect(screen.queryByRole("region", { name: "Search" })).not.toBeNull()
+  })
+
   it("folds the details rail away and back (focus mode)", () => {
     render(<NoteWorkspace />)
     expect(screen.queryByRole("region", { name: "Workspace metrics" })).not.toBeNull()

@@ -27,13 +27,15 @@ export function QuickSwitcher({
   const [active, setActive] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // Reset the query + selection each time it opens, and focus the input.
+  // On open: reset the query + selection and move focus into the dialog; on close: restore focus
+  // to whatever was focused before (standard modal a11y, so keyboard users aren't dumped at the top).
   useEffect(() => {
-    if (open) {
-      setQuery("")
-      setActive(0)
-      inputRef.current?.focus()
-    }
+    if (!open) return
+    const previouslyFocused = document.activeElement as HTMLElement | null
+    setQuery("")
+    setActive(0)
+    inputRef.current?.focus()
+    return () => previouslyFocused?.focus?.()
   }, [open])
 
   if (!open) return null
