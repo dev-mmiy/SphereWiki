@@ -15,6 +15,7 @@ import { NoteEditor } from "./NoteEditor"
 import { NoteList } from "./note-list"
 import { SearchPanel } from "./search-panel"
 import { TagsPanel } from "./tags-panel"
+import { ThemeToggle } from "./theme-toggle"
 import { useVaultWorkspace } from "./use-vault-workspace"
 
 /** One-line summary of an agent run for the status area. */
@@ -73,7 +74,8 @@ export function NoteWorkspace({ auth = devAuth() }: { auth?: AuthProvider }) {
   return (
     <div className="workspace">
       <header>
-        {session ? `${session.account.email} · ${role ?? "no access"}` : "signed out"}
+        <span>{session ? `${session.account.email} · ${role ?? "no access"}` : "signed out"}</span>
+        <ThemeToggle />
       </header>
       <NoteList
         notes={ws.notes}

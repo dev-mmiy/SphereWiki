@@ -11,4 +11,6 @@ afterEach(() => {
   } catch {
     // The test env's localStorage may be unavailable/non-functional — nothing to clear.
   }
+  // Reset any theme override so a theme test can't leak <html data-theme> into the next case.
+  delete document.documentElement.dataset.theme
 })

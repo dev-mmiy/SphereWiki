@@ -1,0 +1,88 @@
+/*
+ * SphereWiki design tokens (DESIGN.md Phase 1) — a calm, dense, knowledge-tool palette.
+ *
+ * Light is the :root default; dark applies (a) automatically when the OS prefers dark and the user
+ * hasn't overridden it, and (b) explicitly via [data-theme="dark"]. The theme module sets/removes
+ * `data-theme` on <html>; "system" removes it so the @media query decides (no JS matchMedia needed).
+ *
+ * Desktop-local for now; moves to a shared `@spherewiki/ui` when the web client is built.
+ */
+
+:root {
+  /* Color — light (default). Semantic names; components reference these, never raw hex. */
+  --bg: #f6f6f8; /* app canvas */
+  --surface: #ffffff; /* panels, cards, editor */
+  --surface-2: #eeeef1; /* subtle inset / hover */
+  --text: #1b1c1f;
+  --muted: #686b73; /* secondary text */
+  --border: #e1e2e7;
+  --accent: #2563eb; /* interactive / selection (blue) */
+  --accent-contrast: #ffffff;
+  --ai: #0d9488; /* AI attribution (teal — distinct from accent) */
+  --danger: #dc2626;
+  --success: #16a34a;
+
+  /* Spacing scale (4px base). */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  /* Typography — dense by default. System fonts (offline, no CDN). */
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --leading: 1.5;
+
+  /* Radii / shadow / z. */
+  --radius-sm: 4px;
+  --radius: 6px;
+  --radius-lg: 10px;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-2: 0 6px 18px rgba(0, 0, 0, 0.12);
+  --z-overlay: 100;
+  --z-tooltip: 200;
+}
+
+/* Dark color overrides — applied on OS-dark (unless the user forced light)... */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #161718;
+    --surface: #1d1e21;
+    --surface-2: #26272b;
+    --text: #e5e6ea;
+    --muted: #9a9da6;
+    --border: #2e2f34;
+    --accent: #3b82f6;
+    --accent-contrast: #0b0c0d;
+    --ai: #2dd4bf;
+    --danger: #f87171;
+    --success: #4ade80;
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-2: 0 6px 18px rgba(0, 0, 0, 0.55);
+  }
+}
+
+/* ...and always when explicitly chosen. (Kept in sync with the @media block above.) */
+:root[data-theme="dark"] {
+  --bg: #161718;
+  --surface: #1d1e21;
+  --surface-2: #26272b;
+  --text: #e5e6ea;
+  --muted: #9a9da6;
+  --border: #2e2f34;
+  --accent: #3b82f6;
+  --accent-contrast: #0b0c0d;
+  --ai: #2dd4bf;
+  --danger: #f87171;
+  --success: #4ade80;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 6px 18px rgba(0, 0, 0, 0.55);
+}
