@@ -56,7 +56,7 @@ import {
   yjsEngine,
 } from "@spherewiki/shared"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { WORKSPACE_ID } from "../auth-dev"
+import { WORKSPACE_ID } from "../auth-local"
 import {
   type AiEditMetrics,
   type AiMetricsRecorder,

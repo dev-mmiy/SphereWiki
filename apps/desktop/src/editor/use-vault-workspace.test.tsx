@@ -2,7 +2,7 @@ import type { OnSaveResult, RagAnswer, SuggestionProvider } from "@spherewiki/ai
 import { openYjsRegistry, type YjsBackedRegistry } from "@spherewiki/shared"
 import { act, renderHook } from "@testing-library/react"
 import { describe, expect, it } from "vitest"
-import { devAuth } from "../auth-dev"
+import { localAuth } from "../auth-local"
 import { createAiMetricsRecorder } from "../metrics/ai-metrics"
 import type { ConnectRegistry } from "../sync/connect-registry"
 import type { ConnectNote } from "../sync/connect-server"
@@ -280,7 +280,7 @@ describe("useVaultWorkspace", () => {
 
   it("surfaces AI-added tags (auto-tag becomes visible)", async () => {
     const { result } = renderHook(() => useVaultWorkspace())
-    const session = devAuth("editor").session()
+    const session = localAuth("editor").session()
     if (session === null) throw new Error("expected a session")
     expect(result.current.tags).toEqual([])
     await act(async () => {
@@ -292,7 +292,7 @@ describe("useVaultWorkspace", () => {
   it("records AI applies and reverts (the kept-vs-reverted signal)", async () => {
     const recorder = createAiMetricsRecorder() // in-memory
     const { result } = renderHook(() => useVaultWorkspace({ aiMetricsRecorder: recorder }))
-    const session = devAuth("editor").session()
+    const session = localAuth("editor").session()
     if (session === null) throw new Error("expected a session")
     expect(result.current.aiMetrics.applied).toBe(0)
 
@@ -313,7 +313,7 @@ describe("useVaultWorkspace", () => {
 
   it("suggest mode surfaces candidates without applying them", async () => {
     const { result } = renderHook(() => useVaultWorkspace())
-    const session = devAuth("editor").session()
+    const session = localAuth("editor").session()
     if (session === null) throw new Error("expected a session")
     act(() => result.current.setAiAutonomy("suggest"))
     let res: OnSaveResult | undefined
@@ -331,7 +331,7 @@ describe("useVaultWorkspace", () => {
 
   it("aiApplySuggestions applies a human-confirmed subset via the AI write path", async () => {
     const { result } = renderHook(() => useVaultWorkspace())
-    const session = devAuth("editor").session()
+    const session = localAuth("editor").session()
     if (session === null) throw new Error("expected a session")
     act(() => result.current.setAiAutonomy("suggest"))
     let suggested: OnSaveResult["suggested"]
@@ -409,7 +409,7 @@ describe("useVaultWorkspace", () => {
 
   it("runs the AI agent: applies edits and records an attributed version", async () => {
     const { result } = renderHook(() => useVaultWorkspace())
-    const session = devAuth("editor").session()
+    const session = localAuth("editor").session()
     if (session === null) throw new Error("expected a session")
     let res: OnSaveResult | undefined
     await act(async () => {
@@ -423,7 +423,7 @@ describe("useVaultWorkspace", () => {
   it("does nothing for a viewer (no write permission)", async () => {
     const { result } = renderHook(() => useVaultWorkspace())
     const before = result.current.activeNote?.getText()
-    const session = devAuth("viewer").session()
+    const session = localAuth("viewer").session()
     if (session === null) throw new Error("expected a session")
     let res: OnSaveResult | undefined
     await act(async () => {
@@ -437,7 +437,7 @@ describe("useVaultWorkspace", () => {
 
   it("auto-links an unlinked mention of a sibling note", async () => {
     const { result } = renderHook(() => useVaultWorkspace())
-    const session = devAuth("editor").session()
+    const session = localAuth("editor").session()
     if (session === null) throw new Error("expected a session")
     const gs = result.current.notes.find((m) => m.title === "Getting Started")
     act(() => {
@@ -463,7 +463,7 @@ describe("useVaultWorkspace", () => {
         }),
     }
     const { result } = renderHook(() => useVaultWorkspace({ suggester: deferred }))
-    const session = devAuth("editor").session()
+    const session = localAuth("editor").session()
     if (session === null) throw new Error("expected a session")
     const homeId = result.current.activeId
 

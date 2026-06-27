@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { devAuth } from "../auth-dev"
+import { localAuth } from "../auth-local"
 import { NoteWorkspace } from "./NoteWorkspace"
 
 afterEach(() => {
@@ -93,7 +93,7 @@ describe("NoteWorkspace", () => {
   })
 
   it("shows the current user and enables editing for an editor", () => {
-    render(<NoteWorkspace auth={devAuth("editor")} />)
+    render(<NoteWorkspace auth={localAuth("editor")} />)
     expect(screen.getByText(/you@local/)).toBeTruthy()
     expect(document.querySelector(".cm-content")?.getAttribute("contenteditable")).toBe("true")
     expect(
@@ -102,26 +102,26 @@ describe("NoteWorkspace", () => {
   })
 
   it("offers Organize with AI for an editor and disables it for a viewer", () => {
-    const { unmount } = render(<NoteWorkspace auth={devAuth("editor")} />)
+    const { unmount } = render(<NoteWorkspace auth={localAuth("editor")} />)
     expect(
       (screen.getByRole("button", { name: /organize with ai/i }) as HTMLButtonElement).disabled,
     ).toBe(false)
     unmount()
-    render(<NoteWorkspace auth={devAuth("viewer")} />)
+    render(<NoteWorkspace auth={localAuth("viewer")} />)
     expect(
       (screen.getByRole("button", { name: /organize with ai/i }) as HTMLButtonElement).disabled,
     ).toBe(true)
   })
 
   it("runs the agent, surfaces what it added, and attributes it in history", async () => {
-    render(<NoteWorkspace auth={devAuth("editor")} />)
+    render(<NoteWorkspace auth={localAuth("editor")} />)
     fireEvent.click(screen.getByRole("button", { name: /organize with ai/i }))
     expect(await screen.findByText(/AI added/)).toBeTruthy()
     expect(screen.getByText(/ai:on-save/)).toBeTruthy() // the AI version, attributed in history
   })
 
   it("shows an empty-tags hint, then surfaces AI-added tags in the Tags panel", async () => {
-    render(<NoteWorkspace auth={devAuth("editor")} />)
+    render(<NoteWorkspace auth={localAuth("editor")} />)
     const tagsRegion = screen.getByRole("region", { name: "Tags" })
     expect(within(tagsRegion).getByText(/no tags yet/i)).toBeTruthy() // seed Home has no tags
     fireEvent.click(screen.getByRole("button", { name: /organize with ai/i }))
@@ -132,7 +132,7 @@ describe("NoteWorkspace", () => {
   })
 
   it("lets an editor add a tag from the Tags panel (human + AI co-edit tags)", () => {
-    render(<NoteWorkspace auth={devAuth("editor")} />)
+    render(<NoteWorkspace auth={localAuth("editor")} />)
     const tagsRegion = screen.getByRole("region", { name: "Tags" })
     const input = within(tagsRegion).getByRole("textbox", { name: "Add tag" })
     fireEvent.change(input, { target: { value: "planning" } })
@@ -141,7 +141,7 @@ describe("NoteWorkspace", () => {
   })
 
   it("hides tag editing for a viewer", () => {
-    render(<NoteWorkspace auth={devAuth("viewer")} />)
+    render(<NoteWorkspace auth={localAuth("viewer")} />)
     const tagsRegion = screen.getByRole("region", { name: "Tags" })
     expect(within(tagsRegion).queryByRole("textbox", { name: "Add tag" })).toBeNull()
   })
@@ -188,7 +188,7 @@ describe("NoteWorkspace", () => {
   })
 
   it("answers a workspace question with cited notes (RAG)", async () => {
-    render(<NoteWorkspace auth={devAuth("editor")} />)
+    render(<NoteWorkspace auth={localAuth("editor")} />)
     fireEvent.change(screen.getByLabelText(/ask the workspace/i), {
       target: { value: "auto links notes" },
     })
@@ -198,7 +198,7 @@ describe("NoteWorkspace", () => {
   })
 
   it("deletes a note to the trash and restores it", () => {
-    render(<NoteWorkspace auth={devAuth("editor")} />)
+    render(<NoteWorkspace auth={localAuth("editor")} />)
     const nav = screen.getByRole("navigation")
     expect(within(nav).getByRole("button", { name: "Ideas" })).toBeTruthy()
     fireEvent.click(within(nav).getByRole("button", { name: "Delete Ideas" }))
@@ -209,7 +209,7 @@ describe("NoteWorkspace", () => {
   })
 
   it("shows the first-run welcome when every note is deleted, and creates from it", () => {
-    render(<NoteWorkspace auth={devAuth("editor")} />)
+    render(<NoteWorkspace auth={localAuth("editor")} />)
     const nav = screen.getByRole("navigation")
     // Delete all three seed notes (deleting the active one moves on to the next).
     for (const title of ["Home", "Getting Started", "Ideas"]) {
@@ -227,7 +227,7 @@ describe("NoteWorkspace", () => {
 
   it("renames the active note from the list (prompt → relabel)", () => {
     vi.spyOn(window, "prompt").mockReturnValue("Index")
-    render(<NoteWorkspace auth={devAuth("editor")} />)
+    render(<NoteWorkspace auth={localAuth("editor")} />)
     const nav = screen.getByRole("navigation")
     expect(within(nav).getByRole("button", { name: "Home" })).toBeTruthy()
     fireEvent.click(within(nav).getByRole("button", { name: "Rename Home" }))
@@ -237,7 +237,7 @@ describe("NoteWorkspace", () => {
 
   it("does not rename when the prompt is cancelled", () => {
     vi.spyOn(window, "prompt").mockReturnValue(null)
-    render(<NoteWorkspace auth={devAuth("editor")} />)
+    render(<NoteWorkspace auth={localAuth("editor")} />)
     const nav = screen.getByRole("navigation")
     fireEvent.click(within(nav).getByRole("button", { name: "Rename Ideas" }))
     expect(within(nav).getByRole("button", { name: "Ideas" })).toBeTruthy()
@@ -245,7 +245,7 @@ describe("NoteWorkspace", () => {
 
   it("disables rename for a viewer and blocks the action", () => {
     vi.spyOn(window, "prompt").mockReturnValue("Hacked")
-    render(<NoteWorkspace auth={devAuth("viewer")} />)
+    render(<NoteWorkspace auth={localAuth("viewer")} />)
     const nav = screen.getByRole("navigation")
     const btn = within(nav).getByRole("button", { name: "Rename Ideas" }) as HTMLButtonElement
     expect(btn.disabled).toBe(true)
@@ -255,7 +255,7 @@ describe("NoteWorkspace", () => {
   })
 
   it("disables delete for a viewer", () => {
-    render(<NoteWorkspace auth={devAuth("viewer")} />)
+    render(<NoteWorkspace auth={localAuth("viewer")} />)
     const nav = screen.getByRole("navigation")
     expect(
       (within(nav).getByRole("button", { name: "Delete Ideas" }) as HTMLButtonElement).disabled,
@@ -263,7 +263,7 @@ describe("NoteWorkspace", () => {
   })
 
   it("is read-only for a viewer", () => {
-    render(<NoteWorkspace auth={devAuth("viewer")} />)
+    render(<NoteWorkspace auth={localAuth("viewer")} />)
     expect(document.querySelector(".cm-content")?.getAttribute("contenteditable")).toBe("false")
     expect(
       (screen.getByRole("button", { name: /commit version/i }) as HTMLButtonElement).disabled,

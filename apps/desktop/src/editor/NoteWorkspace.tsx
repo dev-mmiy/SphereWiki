@@ -3,7 +3,7 @@ import { type AuthProvider, asNoteId, can, type DiffChunk, roleFor } from "@sphe
 import { CollapsiblePanel, ThemeToggle } from "@spherewiki/ui"
 import { useEffect, useState } from "react"
 import { appTitle } from "../app-info"
-import { devAuth, WORKSPACE_ID } from "../auth-dev"
+import { localAuth, WORKSPACE_ID } from "../auth-local"
 import { createAiMetricsRecorder } from "../metrics/ai-metrics"
 import { createGraphBaselineRecorder, graphSnapshot } from "../metrics/graph-growth"
 import { connectRegistryToServer } from "../sync/connect-registry"
@@ -50,9 +50,9 @@ function describeResult(r: OnSaveResult): string {
   }
 }
 
-export function NoteWorkspace({ auth = devAuth() }: { auth?: AuthProvider }) {
+export function NoteWorkspace({ auth = localAuth() }: { auth?: AuthProvider }) {
   // Kept-vs-reverted counters persist (localStorage) so they accumulate across sessions. Keyed by
-  // the single dev WORKSPACE_ID today; when real multi-workspace switching lands, derive this key
+  // the local-mode WORKSPACE_ID today; when real multi-workspace switching lands, derive this key
   // from the same workspaceId the hook uses so per-workspace metrics never share a bucket.
   const [aiMetricsRecorder] = useState(() =>
     createAiMetricsRecorder({
