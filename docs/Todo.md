@@ -1,9 +1,10 @@
 # SphereWiki — Todo & Progress
 
 > Living status tracker. The **plan** lives in [`ROADMAP.md`](ROADMAP.md) (MVP scope, milestones
-> M0–M5, post-MVP); the **decisions** in [`PRODUCT.md`](PRODUCT.md); the **loop & architecture** in
-> [`../CLAUDE.md`](../CLAUDE.md). This file tracks what is **done**, what is **deferred (and why)**,
-> and **what to do next** — from here to the MVP release and beyond.
+> M0–M5, post-MVP); the **decisions** in [`PRODUCT.md`](PRODUCT.md); the **UI/visual design plan** in
+> [`DESIGN.md`](DESIGN.md); the **loop & architecture** in [`../CLAUDE.md`](../CLAUDE.md). This file
+> tracks what is **done**, what is **deferred (and why)**, and **what to do next** — from here to the
+> MVP release and beyond.
 >
 > Legend: ✅ done · ◐ partial (local/seam done, rest deferred) · ⏳ deferred (credentials / toolchain) · ▢ not started
 
@@ -94,8 +95,9 @@ Surfaced by adversarial review; each is additive and lands behind the existing s
 ### Local-testable now (no credentials)
 The cheap local **M5 hardening** wins are done — CRDT data-safety property tests (body + note-list convergence, revert round-trip), the AI cross-workspace isolation guard, and the onboarding empty state. What's left toward MVP exit is mostly **actual dogfooding** (a team using it daily ≥ 3–4 weeks, success criteria measurable) plus credential-/DB-gated items; the remaining *code* is polish + a few deferred-by-dependency pieces:
 
-1. **Polish candidates (small, optional UX):** wikilink autocomplete in the editor (`[[` → title suggestions); a Cmd-K quick-switcher over the existing search; surfacing the AI "suggest" autonomy mode (review-before-apply) in the UI; a sync loading/"syncing…" indicator (needs an injectable non-hydrating transport in `NoteWorkspace` to test); a richer first-run welcome; client-side room-auth token threading (inert until WorkOS, but readies the seam).
-2. **M5 — precise kept-vs-reverted ledger (DB-dependent).** The shipped metric uses persisted **running totals** (an approximation that can over-count on revert→re-apply→revert). A precise per-edit ledger (each AI suggestion's final kept/reverted outcome) needs persistent per-note version history — lands with the version-store DB (M3b/M4b). Also: AI **contribution share** of the graph (AI- vs human-authored links/tags) needs the same persistent attribution.
+1. **UI/visual design — the app is currently unstyled.** A dedicated workstream beyond the MVP polish bar; full plan in [`DESIGN.md`](DESIGN.md). Decided (Phase 0): **3-pane** layout, **calm & dense** aesthetic, **CSS design tokens + lightweight CSS** (no framework), **Claude Design** adopted as the design-system hub in Phase 3. Phases: ▢ **P1 tokens & theme** (semantic color / spacing / type / radii + light/dark) → ▢ **P2 layout & component pass** (3-pane shell + style each component, incl. the human/AI-edit + revert/kept visual language) → ▢ **P3 Claude Design** (`/design-sync` styleguide) → ▢ **P4 polish & web** (a11y, responsive; web reuses `@spherewiki/ui`).
+2. **Polish candidates (small, optional UX):** wikilink autocomplete in the editor (`[[` → title suggestions); a Cmd-K quick-switcher over the existing search; surfacing the AI "suggest" autonomy mode (review-before-apply) in the UI; a sync loading/"syncing…" indicator (needs an injectable non-hydrating transport in `NoteWorkspace` to test); a richer first-run welcome; client-side room-auth token threading (inert until WorkOS, but readies the seam).
+3. **M5 — precise kept-vs-reverted ledger (DB-dependent).** The shipped metric uses persisted **running totals** (an approximation that can over-count on revert→re-apply→revert). A precise per-edit ledger (each AI suggestion's final kept/reverted outcome) needs persistent per-note version history — lands with the version-store DB (M3b/M4b). Also: AI **contribution share** of the graph (AI- vs human-authored links/tags) needs the same persistent attribution.
 
 ### Gated — unblock when the dependency is available
 - **Deploy the server + WorkOS** → finishes M3b's remaining done-when (real accounts, DB-enforced isolation) and lets the room-auth token path go live.

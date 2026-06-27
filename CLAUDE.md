@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> **Status: active development.** This file defines the architecture and the **Loop Engineering** discipline the project is built around. The command names below are a stable contract — keep the names stable even if the underlying tools change; the loop depends on them, not on raw tool invocations. Full product requirements live in [`docs/PRODUCT.md`](docs/PRODUCT.md); the MVP scope & milestone **plan** in [`docs/ROADMAP.md`](docs/ROADMAP.md); **live progress and the next tasks** in [`docs/Todo.md`](docs/Todo.md).
+> **Status: active development.** This file defines the architecture and the **Loop Engineering** discipline the project is built around. The command names below are a stable contract — keep the names stable even if the underlying tools change; the loop depends on them, not on raw tool invocations. Full product requirements live in [`docs/PRODUCT.md`](docs/PRODUCT.md); the MVP scope & milestone **plan** in [`docs/ROADMAP.md`](docs/ROADMAP.md); **live progress and the next tasks** in [`docs/Todo.md`](docs/Todo.md); the **UI/visual design plan** in [`docs/DESIGN.md`](docs/DESIGN.md).
 
 ## Project: SphereWiki
 
