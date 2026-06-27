@@ -49,7 +49,6 @@ export function GraphView({
   if (nodes.length === 0) {
     return (
       <section aria-label="Graph" className="graph">
-        <h3>Graph</h3>
         <p className="graph-empty">No notes to graph yet.</p>
       </section>
     )
@@ -58,7 +57,6 @@ export function GraphView({
   const pos = layout(nodes)
   return (
     <section aria-label="Graph" className="graph">
-      <h3>Graph</h3>
       <svg viewBox={`0 0 ${SIZE} ${SIZE}`} className="graph-svg">
         <title>Note graph</title>
         {edges.map((e) => {

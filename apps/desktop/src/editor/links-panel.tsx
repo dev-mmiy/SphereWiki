@@ -21,9 +21,8 @@ export function LinksPanel({
   onCreate: (title: string) => void
 }) {
   return (
-    <aside>
+    <aside className="links">
       <section>
-        <h3>Links</h3>
         <ul>
           {outgoing.map((link) =>
             link.exists ? (

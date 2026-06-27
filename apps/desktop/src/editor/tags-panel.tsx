@@ -43,7 +43,6 @@ export function TagsPanel({
 
   return (
     <section aria-label="Tags" className="tags">
-      <h3>Tags</h3>
       {tags.length === 0 ? (
         <p className="tags-empty">No tags yet — add one below or run "Organize with AI".</p>
       ) : (

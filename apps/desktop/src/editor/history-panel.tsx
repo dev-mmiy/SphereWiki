@@ -15,7 +15,6 @@ export function HistoryPanel({
 }) {
   return (
     <aside className="history">
-      <h3>History</h3>
       <button type="button" onClick={onCommit} disabled={!canEdit}>
         Commit version
       </button>

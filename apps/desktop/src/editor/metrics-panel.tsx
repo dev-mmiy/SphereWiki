@@ -22,7 +22,6 @@ export function MetricsPanel({ metrics, ai }: { metrics: WorkspaceMetrics; ai: A
 
   return (
     <section aria-label="Workspace metrics" className="metrics">
-      <h3>Workspace</h3>
       <dl>
         {items.map(([label, value]) => (
           <div key={label} className="metric">

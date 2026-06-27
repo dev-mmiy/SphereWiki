@@ -8,6 +8,7 @@ import { connectRegistryToServer } from "../sync/connect-registry"
 import { connectLocalPersistence } from "../sync/local-persistence"
 import { connectRegistryPersistence } from "../sync/registry-persistence"
 import { AskPanel } from "./ask-panel"
+import { CollapsiblePanel } from "./collapsible-panel"
 import { GraphView } from "./graph-view"
 import { DiffView, HistoryPanel } from "./history-panel"
 import { LinksPanel } from "./links-panel"
@@ -157,79 +158,91 @@ export function NoteWorkspace({ auth = devAuth() }: { auth?: AuthProvider }) {
         </main>
 
         <aside className="rail">
-          <LinksPanel
-            outgoing={ws.outgoing}
-            backlinks={ws.backlinks}
-            canCreate={canWrite}
-            onNavigate={(title) => {
-              clearDiff()
-              setAiStatus(null)
-              ws.selectByTitle(title)
-            }}
-            onCreate={(title) => {
-              clearDiff()
-              setAiStatus(null)
-              ws.create(title)
-            }}
-          />
-          <TagsPanel
-            key={ws.activeId}
-            tags={ws.tags}
-            activeId={ws.activeId}
-            canEdit={canWrite && ws.activeNote !== null && ws.hydrated}
-            notesForTag={ws.notesForTag}
-            onNavigate={(id) => {
-              clearDiff()
-              setAiStatus(null)
-              ws.select(id)
-            }}
-            onAddTag={(tag) => {
-              clearDiff()
-              setAiStatus(null)
-              ws.addTag(tag)
-            }}
-            onRemoveTag={(tag) => {
-              clearDiff()
-              setAiStatus(null)
-              ws.removeTag(tag)
-            }}
-          />
-          <MetricsPanel metrics={ws.metrics} ai={ws.aiMetrics} />
-          <GraphView
-            nodes={ws.graph.nodes}
-            edges={ws.graph.edges}
-            activeId={ws.activeId}
-            canCreate={canWrite}
-            onNavigate={(id) => {
-              clearDiff()
-              setAiStatus(null)
-              ws.select(asNoteId(id))
-            }}
-            onCreate={(title) => {
-              clearDiff()
-              setAiStatus(null)
-              ws.create(title)
-            }}
-          />
-          <HistoryPanel
-            versions={ws.versions}
-            canEdit={canWrite}
-            onCommit={() => ws.commit()}
-            onRevert={(id) => {
-              ws.revert(id)
-              clearDiff()
-            }}
-            onDiff={(id) => setDiff(ws.diffAgainstCurrent(id))}
-          />
-          <AskPanel
-            canAsk={session !== null}
-            onAsk={(query) => ws.aiAsk(query)}
-            onNavigate={(title) => {
-              clearDiff()
-              setAiStatus(null)
-              ws.selectByTitle(title)
-            }}
-          />
+          <CollapsiblePanel title="Links">
+            <LinksPanel
+              outgoing={ws.outgoing}
+              backlinks={ws.backlinks}
+              canCreate={canWrite}
+              onNavigate={(title) => {
+                clearDiff()
+                setAiStatus(null)
+                ws.selectByTitle(title)
+              }}
+              onCreate={(title) => {
+                clearDiff()
+                setAiStatus(null)
+                ws.create(title)
+              }}
+            />
+          </CollapsiblePanel>
+          <CollapsiblePanel title="Tags">
+            <TagsPanel
+              key={ws.activeId}
+              tags={ws.tags}
+              activeId={ws.activeId}
+              canEdit={canWrite && ws.activeNote !== null && ws.hydrated}
+              notesForTag={ws.notesForTag}
+              onNavigate={(id) => {
+                clearDiff()
+                setAiStatus(null)
+                ws.select(id)
+              }}
+              onAddTag={(tag) => {
+                clearDiff()
+                setAiStatus(null)
+                ws.addTag(tag)
+              }}
+              onRemoveTag={(tag) => {
+                clearDiff()
+                setAiStatus(null)
+                ws.removeTag(tag)
+              }}
+            />
+          </CollapsiblePanel>
+          <CollapsiblePanel title="Workspace">
+            <MetricsPanel metrics={ws.metrics} ai={ws.aiMetrics} />
+          </CollapsiblePanel>
+          <CollapsiblePanel title="Graph">
+            <GraphView
+              nodes={ws.graph.nodes}
+              edges={ws.graph.edges}
+              activeId={ws.activeId}
+              canCreate={canWrite}
+              onNavigate={(id) => {
+                clearDiff()
+                setAiStatus(null)
+                ws.select(asNoteId(id))
+              }}
+              onCreate={(title) => {
+                clearDiff()
+                setAiStatus(null)
+                ws.create(title)
+              }}
+            />
+          </CollapsiblePanel>
+          <CollapsiblePanel title="History">
+            <HistoryPanel
+              versions={ws.versions}
+              canEdit={canWrite}
+              onCommit={() => ws.commit()}
+              onRevert={(id) => {
+                ws.revert(id)
+                clearDiff()
+              }}
+              onDiff={(id) => setDiff(ws.diffAgainstCurrent(id))}
+            />
+          </CollapsiblePanel>
+          <CollapsiblePanel title="Ask">
+            <AskPanel
+              canAsk={session !== null}
+              onAsk={(query) => ws.aiAsk(query)}
+              onNavigate={(title) => {
+                clearDiff()
+                setAiStatus(null)
+                ws.selectByTitle(title)
+              }}
+            />
+          </CollapsiblePanel>
         </aside>
       </div>
     </div>
