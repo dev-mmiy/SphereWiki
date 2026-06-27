@@ -104,6 +104,19 @@ ul.tag-chips {
   color: var(--danger);
 }
 
+/* Graph-growth delta badge next to a metric value (signed change since the workspace was opened). */
+.metric-growth {
+  margin-left: var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+.metric-growth[data-dir="up"] {
+  color: var(--success);
+}
+.metric-growth[data-dir="down"] {
+  color: var(--muted);
+}
+
 /* Sync status pill (topbar) — a coloured dot + label for the active note's sync state. */
 .sync-status {
   display: inline-flex;

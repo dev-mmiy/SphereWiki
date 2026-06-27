@@ -5,6 +5,7 @@ import { useEffect, useState } from "react"
 import { appTitle } from "../app-info"
 import { devAuth, WORKSPACE_ID } from "../auth-dev"
 import { createAiMetricsRecorder } from "../metrics/ai-metrics"
+import { createGraphBaselineRecorder, graphSnapshot } from "../metrics/graph-growth"
 import { connectRegistryToServer } from "../sync/connect-registry"
 import { connectLocalPersistence } from "../sync/local-persistence"
 import { connectRegistryPersistence } from "../sync/registry-persistence"
@@ -59,6 +60,14 @@ export function NoteWorkspace({ auth = devAuth() }: { auth?: AuthProvider }) {
       key: `spherewiki:aimetrics:${WORKSPACE_ID}`,
     }),
   )
+  // Baseline for the "graph growth" dogfooding signal: captured once per workspace (after
+  // hydration), persisted so the metrics panel shows growth since the workspace was first opened.
+  const [graphBaseline] = useState(() =>
+    createGraphBaselineRecorder({
+      storage: window.localStorage,
+      key: `spherewiki:graphbaseline:${WORKSPACE_ID}`,
+    }),
+  )
   // Durable local vault (survives reload, offline); opt-in live sync via VITE_SYNC_URL.
   // When syncing, a local CRDT cache (IndexedDB) keeps the room readable offline.
   const ws = useVaultWorkspace({
@@ -105,6 +114,13 @@ export function NoteWorkspace({ auth = devAuth() }: { auth?: AuthProvider }) {
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
   }, [])
+
+  // Capture the graph baseline once the workspace has hydrated (so a transient pre-sync empty graph
+  // can't be mistaken for the baseline). `ensure` is idempotent — only the first call sticks.
+  useEffect(() => {
+    if (ws.hydrated) graphBaseline.ensure(graphSnapshot(ws.metrics))
+  }, [ws.hydrated, ws.metrics, graphBaseline])
+  const graphGrowth = graphBaseline.growth(graphSnapshot(ws.metrics))
 
   const session = auth.session()
   const role = session ? roleFor(session, WORKSPACE_ID) : null
@@ -310,7 +326,7 @@ export function NoteWorkspace({ auth = devAuth() }: { auth?: AuthProvider }) {
               />
             </CollapsiblePanel>
             <CollapsiblePanel title="Workspace">
-              <MetricsPanel metrics={ws.metrics} ai={ws.aiMetrics} />
+              <MetricsPanel metrics={ws.metrics} ai={ws.aiMetrics} growth={graphGrowth} />
             </CollapsiblePanel>
             <CollapsiblePanel title="Graph">
               <GraphView
