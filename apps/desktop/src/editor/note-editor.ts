@@ -57,5 +57,8 @@ export function mountEditor(
   if (options.getTitles) {
     extensions.push(autocompletion({ override: [wikilinkCompletionSource(options.getTitles)] }))
   }
-  return new EditorView({ parent, extensions })
+  // Seed the editor with the note's current text. y-codemirror.next only syncs *future* ytext
+  // changes (it assumes editor.doc === ytext at construction), so without this the editor opens
+  // EMPTY while the note has content — and the first keystroke inserts at position 0, corrupting it.
+  return new EditorView({ parent, doc: note.getText(), extensions })
 }

@@ -1,6 +1,9 @@
 import type { CompletionContext, CompletionResult } from "@codemirror/autocomplete"
+import { type EditOrigin, openYjsNote } from "@spherewiki/shared"
 import { describe, expect, it } from "vitest"
-import { wikilinkCompletionSource } from "./note-editor"
+import { mountEditor, wikilinkCompletionSource } from "./note-editor"
+
+const LOCAL: EditOrigin = { actor: "local", kind: "human" }
 
 const TITLES = ["Home", "Roadmap", "Road trip"]
 
@@ -54,5 +57,37 @@ describe("wikilinkCompletionSource", () => {
 
   it("returns null when nothing matches", () => {
     expect(complete("[[zzz")).toBeNull()
+  })
+})
+
+describe("mountEditor", () => {
+  it("initializes the editor doc from the note's existing content (not an empty doc)", () => {
+    // y-codemirror.next only syncs *future* ytext changes — the EditorState doc must be seeded with
+    // the current text, or the editor opens EMPTY while the note has content, and the first
+    // keystroke inserts at position 0 and corrupts the note.
+    const note = openYjsNote()
+    note.setText("# Home\n\nWelcome.", LOCAL)
+    const parent = document.createElement("div")
+    const view = mountEditor(parent, note)
+    try {
+      expect(view.state.doc.toString()).toBe("# Home\n\nWelcome.")
+    } finally {
+      view.destroy()
+      note.destroy()
+    }
+  })
+
+  it("keeps the editor in sync with later note changes (binding intact)", () => {
+    const note = openYjsNote()
+    note.setText("start", LOCAL)
+    const parent = document.createElement("div")
+    const view = mountEditor(parent, note)
+    try {
+      note.setText("start changed", LOCAL)
+      expect(view.state.doc.toString()).toBe("start changed")
+    } finally {
+      view.destroy()
+      note.destroy()
+    }
   })
 })
