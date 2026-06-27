@@ -14,20 +14,27 @@ export function HistoryPanel({
   canEdit?: boolean
 }) {
   return (
-    <aside>
+    <aside className="history">
+      <h3>History</h3>
       <button type="button" onClick={onCommit} disabled={!canEdit}>
         Commit version
       </button>
       <ul>
         {versions.map((v) => (
-          <li key={v.id}>
-            {v.label ?? v.id} · {v.origin.kind}:{v.origin.actor}{" "}
-            <button type="button" onClick={() => onDiff(v.id)}>
-              Diff
-            </button>{" "}
-            <button type="button" onClick={() => onRevert(v.id)} disabled={!canEdit}>
-              Revert
-            </button>
+          // data-kind drives the human-vs-AI attribution color (DESIGN.md visual language).
+          <li key={v.id} className="version" data-kind={v.origin.kind}>
+            <span className="version-main">
+              <span className="version-label">{v.label ?? v.id}</span>
+              <span className="version-origin">{v.origin.kind === "ai" ? "AI" : "you"}</span>
+            </span>
+            <span className="version-actions">
+              <button type="button" onClick={() => onDiff(v.id)}>
+                Diff
+              </button>
+              <button type="button" onClick={() => onRevert(v.id)} disabled={!canEdit}>
+                Revert
+              </button>
+            </span>
           </li>
         ))}
       </ul>

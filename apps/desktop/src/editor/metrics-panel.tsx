@@ -17,6 +17,8 @@ export function MetricsPanel({ metrics, ai }: { metrics: WorkspaceMetrics; ai: A
   ]
   const keptRate = aiKeptRate(ai.applied, ai.reverted)
   const kept = keptRate === null ? "—" : `${Math.round(keptRate * 100)}%`
+  // Colour the headline metric against the ≥~70%-kept success target.
+  const keptState = keptRate === null ? undefined : keptRate >= 0.7 ? "good" : "low"
 
   return (
     <section aria-label="Workspace metrics" className="metrics">
@@ -30,8 +32,11 @@ export function MetricsPanel({ metrics, ai }: { metrics: WorkspaceMetrics; ai: A
         ))}
       </dl>
       <p className="metrics-ai">
-        AI: {ai.applied} applied · <strong>{kept} kept</strong> · {ai.reverted} undone · {ai.links}{" "}
-        links, {ai.tags} tags added
+        AI: {ai.applied} applied ·{" "}
+        <strong className="kept-rate" data-state={keptState}>
+          {kept} kept
+        </strong>{" "}
+        · {ai.reverted} undone · {ai.links} links, {ai.tags} tags added
       </p>
     </section>
   )

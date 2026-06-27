@@ -47,7 +47,7 @@ export function TagsPanel({
       {tags.length === 0 ? (
         <p className="tags-empty">No tags yet — add one below or run "Organize with AI".</p>
       ) : (
-        <ul>
+        <ul className="tag-chips">
           {tags.map((tag) => (
             <li key={tag}>
               <button

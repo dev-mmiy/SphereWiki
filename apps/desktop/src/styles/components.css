@@ -1,0 +1,105 @@
+/*
+ * SphereWiki per-component styling (DESIGN.md Phase 2). The differentiating piece is the
+ * human-vs-AI **attribution** visual language: history versions, diffs, and the kept-vs-reverted
+ * metric all make it visible (and trustworthy) that AI edits are attributed and revertible.
+ */
+
+/* History — version rows carry the human/AI attribution. */
+.history .version {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  border-left: 2px solid transparent; /* AI rows get an accent edge below */
+}
+.history .version[data-kind="ai"] {
+  border-left-color: var(--ai);
+}
+.version-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.version-label {
+  font-size: var(--text-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.version-origin {
+  font-size: var(--text-xs);
+  color: var(--muted);
+}
+.version[data-kind="ai"] .version-origin {
+  color: var(--ai); /* "AI" reads in the AI hue */
+}
+.version-actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.version-actions button {
+  font-size: var(--text-xs);
+}
+
+/* Diff — insertions and deletions in the success / danger hues. */
+.diff {
+  margin: 0;
+  padding: var(--space-2);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: var(--text-sm);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.diff [data-op="ins"] {
+  background: color-mix(in srgb, var(--success) 22%, transparent);
+}
+.diff [data-op="del"] {
+  background: color-mix(in srgb, var(--danger) 22%, transparent);
+  text-decoration: line-through;
+}
+.diff [data-op="eq"] {
+  color: var(--muted);
+}
+
+/* Tags — render as chips (the co-tagged list below stays a plain column). The `ul.tag-chips`
+ * qualifier ties `.rail ul`'s specificity and wins on source order (loaded after workspace.css). */
+ul.tag-chips {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.tag-chips li {
+  display: inline-flex;
+  align-items: center;
+}
+.tag-chips li > button:first-child {
+  padding: 1px var(--space-2);
+  font-size: var(--text-xs);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+.tag-chips li > button[aria-pressed="true"] {
+  border-color: var(--accent);
+}
+.tag-remove {
+  color: var(--muted);
+}
+.tag-add {
+  display: flex;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+
+/* Kept-vs-reverted headline metric, against the ≥~70% target. */
+.kept-rate[data-state="good"] {
+  color: var(--success);
+}
+.kept-rate[data-state="low"] {
+  color: var(--danger);
+}
