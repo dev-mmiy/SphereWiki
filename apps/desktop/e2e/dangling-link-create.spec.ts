@@ -19,11 +19,10 @@ test("creating a note from a dangling [[wikilink]] via the Links panel", async (
   await page.keyboard.type("[[Nowhere]]")
   await expect(editor).toContainText("[[Nowhere]]")
 
-  // The derived Links panel offers to create the dangling target (the graph view also exposes a
-  // "Create note:" node, so scope to the Links panel's real <button>).
-  const createButton = page
-    .locator("aside.links")
-    .getByRole("button", { name: "Create note: Nowhere" })
+  // The derived Links panel offers to create the dangling target. Its accessible name is now
+  // unambiguous — the graph node uses a distinct "Create note from graph: …" name — so this
+  // strict-mode getByRole resolving to a single element also guards that disambiguation.
+  const createButton = page.getByRole("button", { name: "Create note: Nowhere" })
   await expect(createButton).toBeVisible()
   await createButton.click()
 

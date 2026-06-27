@@ -70,7 +70,7 @@ describe("GraphView", () => {
       nodes: ghostNodes,
       edges: [{ from: "a", to: "dangling:Nowhere" }],
     })
-    fireEvent.click(screen.getByRole("button", { name: "Create note: Nowhere" }))
+    fireEvent.click(screen.getByRole("button", { name: "Create note from graph: Nowhere" }))
     expect(onCreate).toHaveBeenCalledWith("Nowhere")
     expect(onNavigate).not.toHaveBeenCalled()
   })
@@ -95,7 +95,9 @@ describe("GraphView", () => {
       activeId: "dangling:Nowhere", // a stray ghost activeId must not leak aria-current
     })
     expect(
-      screen.getByRole("button", { name: "Create note: Nowhere" }).getAttribute("aria-current"),
+      screen
+        .getByRole("button", { name: "Create note from graph: Nowhere" })
+        .getAttribute("aria-current"),
     ).toBeNull()
   })
 })

@@ -92,7 +92,9 @@ export function GraphView({
             ? `Open ${node.title}`
             : disabled
               ? `Uncreated note: ${node.title}` // a viewer can't create it — don't promise an action
-              : `Create note: ${node.title}`
+              : // "from graph" disambiguates from the Links panel's "Create note: X" button, so the
+                // two distinct controls don't share one accessible name (a screen-reader ambiguity).
+                `Create note from graph: ${node.title}`
           const className = dangling
             ? "graph-node graph-node-dangling"
             : active
