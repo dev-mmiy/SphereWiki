@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> **Status: greenfield.** The repo is empty. This file defines the *intended* architecture and the **Loop Engineering** discipline the project is built around. The command names below are a stable contract — wire them up during scaffolding and keep the names stable even if the underlying tools change; the loop depends on them, not on raw tool invocations. Full product requirements live in [`docs/PRODUCT.md`](docs/PRODUCT.md); the MVP scope and milestones live in [`docs/ROADMAP.md`](docs/ROADMAP.md).
+> **Status: active development.** This file defines the architecture and the **Loop Engineering** discipline the project is built around. The command names below are a stable contract — keep the names stable even if the underlying tools change; the loop depends on them, not on raw tool invocations. Full product requirements live in [`docs/PRODUCT.md`](docs/PRODUCT.md); the MVP scope & milestone **plan** in [`docs/ROADMAP.md`](docs/ROADMAP.md); **live progress and the next tasks** in [`docs/Todo.md`](docs/Todo.md).
 
 ## Project: SphereWiki
 
@@ -26,7 +26,7 @@ Run this cycle for every change. Do not skip steps, and do not declare a task do
 4. **Verify** — Run the gates in order: `typecheck → lint → test → build` (see Verification Gates).
 5. **Self-check** — Confirm the domain invariants still hold (see Guardrails). For storage / index / sync / AI / isolation changes this is mandatory, not optional.
 6. **Correct** — Any red gate sends you to the Self-correction Protocol. Never proceed on red.
-7. **Land** — All gates green and acceptance criteria met → commit one small, reversible step. Then repeat.
+7. **Land** — All gates green and acceptance criteria met → commit one small, reversible step, and **update [`docs/Todo.md`](docs/Todo.md) in the same commit** (see Additional Rules): record the increment, flip its status, refresh *Next up*. Then repeat.
 
 ## Verification Gates (Definition of Done)
 
@@ -113,3 +113,4 @@ Monorepo (pnpm workspaces). Concerns: **desktop**, **web**, **server**, **shared
 
 1. **Respond in Japanese.**
 2. **Commit messages and specs must be written in English.**
+3. **Keep [`docs/Todo.md`](docs/Todo.md) current — it is the living progress tracker and the source of *what to do next*.** When choosing work, pick the next task from its **Next up** section (the *Frame* step). When a task lands (gates green, committed), update `Todo.md` **in the same commit**: add the increment to the **Shipped** running log, flip its status marker (`▢`/`⏳`/`◐` → `✅`, per the file's legend), update the **Milestone status at a glance** table when a milestone advances, and adjust **Next up** (remove what's done, re-prioritize, add follow-ups the work surfaced). Record *progress* in `Todo.md`; keep [`docs/ROADMAP.md`](docs/ROADMAP.md) as the stable *plan* (only edit it if the plan itself changes).
