@@ -111,6 +111,31 @@ describe("runOnSaveAgent", () => {
     expect(index.records()).toHaveLength(0)
   })
 
+  it("refuses an index from another workspace, before any read or write (isolation guard)", async () => {
+    // "AI cannot read or write outside its workspace" — the agent must reject a vector index
+    // belonging to a different workspace, and do so before suggesting (a read) or applying (a write).
+    const { note, store, base } = setup("editor", "# Home\n\nSee Getting Started.\n")
+    let suggesterCalled = false
+    const deps: OnSaveDeps = {
+      suggester: {
+        suggest: async () => {
+          suggesterCalled = true
+          return { links: [], tags: [] }
+        },
+      },
+      embedder: createLocalEmbedder(),
+    }
+    const foreign = createMemoryVectorIndex(asWorkspaceId("other-ws"), createLocalEmbedder().info)
+    const before = note.getText()
+
+    await expect(runOnSaveAgent({ ...base, index: foreign }, deps)).rejects.toThrow(/workspace/i)
+
+    expect(suggesterCalled).toBe(false) // guard fired before any read of note content
+    expect(note.getText()).toBe(before) // ...and before any write
+    expect(store.list()).toHaveLength(0)
+    expect(foreign.records()).toHaveLength(0) // never wrote a vector into the foreign index
+  })
+
   it("does nothing when autonomy is off", async () => {
     const { note, store, deps, base } = setup("editor", "See Getting Started.\n")
     const before = note.getText()
