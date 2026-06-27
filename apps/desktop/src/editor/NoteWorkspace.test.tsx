@@ -208,19 +208,20 @@ describe("NoteWorkspace", () => {
     expect(within(nav).getByRole("button", { name: "Ideas" })).toBeTruthy()
   })
 
-  it("shows an onboarding empty state when every note is deleted, and creates from it", () => {
+  it("shows the first-run welcome when every note is deleted, and creates from it", () => {
     render(<NoteWorkspace auth={devAuth("editor")} />)
     const nav = screen.getByRole("navigation")
     // Delete all three seed notes (deleting the active one moves on to the next).
     for (const title of ["Home", "Getting Started", "Ideas"]) {
       fireEvent.click(within(nav).getByRole("button", { name: `Delete ${title}` }))
     }
-    // The editor area is replaced by a guiding empty state, not left blank.
-    const empty = screen.getByRole("region", { name: "Empty workspace" })
-    expect(within(empty).getByText(/no notes yet/i)).toBeTruthy()
+    // The editor area is replaced by a guiding welcome, not left blank.
+    const welcome = screen.getByRole("region", { name: "Welcome to SphereWiki" })
+    // Because the empty state is the result of deletions, it points back to the Trash.
+    expect(within(welcome).getByText(/trash/i)).toBeTruthy()
     // The CTA creates a note → back to editing.
-    fireEvent.click(within(empty).getByRole("button", { name: /create your first note/i }))
-    expect(screen.queryByRole("region", { name: "Empty workspace" })).toBeNull()
+    fireEvent.click(within(welcome).getByRole("button", { name: /create your first note/i }))
+    expect(screen.queryByRole("region", { name: "Welcome to SphereWiki" })).toBeNull()
     expect(document.querySelector(".cm-editor")).not.toBeNull()
   })
 
