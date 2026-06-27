@@ -32,6 +32,9 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@codemirror/autocomplete':
+        specifier: ^6.0.0
+        version: 6.20.3
       '@codemirror/lang-markdown':
         specifier: ^6.5.0
         version: 6.5.0

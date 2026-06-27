@@ -93,3 +93,29 @@ export function buildLinkGraph(notes: Iterable<{ id: string; body: string }>): L
 
   return { outgoing, backlinks }
 }
+
+/**
+ * Rank note titles for `[[wikilink]]` autocomplete given what the user has typed after `[[`.
+ * Case-insensitive: prefix matches rank ahead of mid-string matches; within each group the input
+ * order is preserved (callers pass titles in their preferred order, e.g. most-recent-first). An
+ * empty query returns the leading titles (so `[[` can list everything). Duplicates are dropped and
+ * the result is capped at `limit`. Pure and engine-agnostic — the CodeMirror source wraps it.
+ */
+export function wikilinkSuggestions(titles: readonly string[], typed: string, limit = 8): string[] {
+  const q = typed.trim().toLowerCase()
+  const seen = new Set<string>()
+  const prefix: string[] = []
+  const substring: string[] = []
+  for (const title of titles) {
+    if (title === "" || seen.has(title)) continue
+    const lower = title.toLowerCase()
+    if (q === "" || lower.startsWith(q)) {
+      seen.add(title)
+      prefix.push(title)
+    } else if (lower.includes(q)) {
+      seen.add(title)
+      substring.push(title)
+    }
+  }
+  return [...prefix, ...substring].slice(0, Math.max(0, limit))
+}

@@ -158,7 +158,12 @@ export function NoteWorkspace({ auth = devAuth() }: { auth?: AuthProvider }) {
             </section>
           ) : (
             ws.activeNote && (
-              <NoteEditor key={ws.activeId} note={ws.activeNote} editable={canWrite} />
+              <NoteEditor
+                key={ws.activeId}
+                note={ws.activeNote}
+                editable={canWrite}
+                titles={ws.notes.map((n) => n.title)}
+              />
             )
           )}
           <div className="ai-bar">

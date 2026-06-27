@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@codemirror/autocomplete": "^6.0.0",
     "@codemirror/lang-markdown": "^6.5.0",
     "@hocuspocus/provider": "^4.3.0",
     "@spherewiki/ai": "workspace:*",
