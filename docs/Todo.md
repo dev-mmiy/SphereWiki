@@ -19,7 +19,7 @@
 | **M3b** Real WS super-peer + durable storage + app sync | ◐ | local done over real sockets; cloud control plane deferred (credentials) |
 | **M4a** On-save AI agent + RAG (local) | ✅ | heuristic suggester + deterministic embedder/answerer, no credentials |
 | **M4b** Real AI backends (ONNX / pgvector / Claude) | ⏳ | needs a model download + a Claude key |
-| **M5** Dogfood hardening + success instrumentation | ◐ | success metrics shipped (graph-growth + kept-vs-reverted); reliability hardening remains |
+| **M5** Dogfood hardening + success instrumentation | ◐ | success metrics shipped; reliability hardening underway (CRDT convergence + revert property tests in) |
 
 **Where we are:** every *local, no-credentials* slice of MVP capability is in place. The desktop app
 runs as a web build (`pnpm dev`) with the CodeMirror↔Yjs editor, a multi-note vault, wikilinks /
@@ -59,6 +59,9 @@ follow-ups and grew to span Notes / AI / sync hardening. Full detail is in the g
 - ✅ **Workspace graph-growth metrics.** A pure shared `buildWorkspaceMetrics(graph, tags)` summarizes the dogfooding "is the wiki growing?" signal from the derived graph model + tag index: **notes**, resolved **links**, **unwritten** (frontier) links, distinct **tags**, and **tagged** notes — all visible-scoped (trash excluded) and idempotent. The desktop `MetricsPanel` shows the readout above the graph. Tested: shared (counts incl. dangling/tag de-dup/empty), hook (reflects the seed; tracks a tag + frontier edit), component + integration.
 - ✅ **Kept-vs-reverted instrumentation.** The headline hypothesis metric (≥ ~70% kept). Shared `countAiVersionsAfter(versions, targetId)` (AI edits a revert rolls back) + `aiKeptRate(applied, reverted)` (clamped to `[0,1]`, null before any apply). A desktop **`AiMetricsRecorder`** seam accumulates applied / reverted / links / tags, **persisted to localStorage** so totals survive reloads (per workspace). The hook records an apply on each agent run that applied, and a revert when a revert rolls back ≥1 AI version; `MetricsPanel` shows `kept %` + contribution. Tested: shared helpers (counts/clamp/edge cases), recorder (accumulate/persist/malformed-blob), hook (apply→`applied`, revert→`reverted`), panel. **Adversarially reviewed** — purely observational (never touches the edit/version path), no real bugs; two low future-proofing notes folded in (test-isolation `localStorage.clear()`; recorder key must track the hook's `workspaceId` once multi-workspace lands). *Approximation (documented):* running totals can over-count on revert→re-apply→revert (clamp keeps the % sane); a precise per-edit ledger lands with the version-store DB.
 
+### Reliability hardening (M5)
+- ✅ **CRDT data-safety property tests.** Deterministic, seeded fuzz tests for the two non-negotiable data invariants. **Convergence / no lost edits:** N replicas fork a common state, each makes random independent insert/delete edits + a unique sentinel, then mesh-merge — over 40 seeded trials every replica converges to identical text and every sentinel survives; a companion test proves merge order-independence + idempotence. **Revert always works:** over 40 trials a note is driven through a churn-heavy random history (committing a version per edit, alternating human/AI attribution); reverting to *every* committed version reproduces its exact text — exercising the compacted (`gc:true`) snapshot path so churn tombstones can't corrupt a restore point. No new deps (tiny in-test PRNG); failing trials are reproducible from their seed. No bugs surfaced — the invariants hold under stress.
+
 ---
 
 ## Known limitations & documented bounds (bounded, behind seams)
@@ -86,7 +89,7 @@ Surfaced by adversarial review; each is additive and lands behind the existing s
 ## Next up
 
 ### Local-testable now (no credentials)
-1. **M5 — reliability hardening.** Stress the data invariants the MVP can't compromise: no lost edits under concurrent sync, revert always works, isolation holds. Add convergence/property tests and an onboarding pass. *Now the main local work left toward MVP exit.*
+1. **M5 — reliability hardening (continued).** Core CRDT data-safety property tests are in (convergence / no-lost-edits + revert round-trip). Remaining: **isolation** property/guard tests (a workspace's notes/index/RAG never leak across workspaces — assert at the data layer, not just by construction); **concurrent-sync stress** at the hook/registry level (two peers editing the note list + bodies converge with no lost note); and an **onboarding** pass (first-run empty-vault UX, error states). *Main local work left toward MVP exit.*
 2. **M5 — precise kept-vs-reverted ledger (DB-dependent).** The shipped metric uses persisted **running totals** (an approximation that can over-count on revert→re-apply→revert). A precise per-edit ledger (each AI suggestion's final kept/reverted outcome) needs persistent per-note version history — lands with the version-store DB (M3b/M4b). Also: AI **contribution share** of the graph (AI- vs human-authored links/tags) needs the same persistent attribution.
 3. **Polish candidates (smaller, optional):** wikilink autocomplete in the editor (`[[` → title suggestions); a Cmd-K quick-switcher over the existing search; surfacing the AI "suggest" autonomy mode (review-before-apply) in the UI; client-side room-auth token threading (inert until WorkOS, but readies the seam).
 
