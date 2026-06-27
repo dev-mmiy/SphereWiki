@@ -17,10 +17,19 @@ import { NoteEditor } from "./NoteEditor"
 import { NoteList } from "./note-list"
 import { QuickSwitcher } from "./quick-switcher"
 import { SearchPanel } from "./search-panel"
+import { ShortcutHelp } from "./shortcut-help"
 import { SuggestionsReview } from "./suggestions-review"
 import { SyncStatus } from "./sync-status"
 import { TagsPanel } from "./tags-panel"
 import { useVaultWorkspace } from "./use-vault-workspace"
+
+/** True when a keystroke is being typed into a field/editor, so bare-key shortcuts must stand down. */
+function isEditableTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null
+  if (el === null) return false
+  const tag = el.tagName
+  return tag === "INPUT" || tag === "TEXTAREA" || el.isContentEditable
+}
 
 /** One-line summary of an agent run for the status area. */
 function describeResult(r: OnSaveResult): string {
@@ -62,6 +71,7 @@ export function NoteWorkspace({ auth = devAuth() }: { auth?: AuthProvider }) {
   const [diff, setDiff] = useState<readonly DiffChunk[] | null>(null)
   const [aiStatus, setAiStatus] = useState<string | null>(null)
   const [quickOpen, setQuickOpen] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
   // Pending AI suggestions awaiting human confirmation (suggest mode). `pendingKey` bumps per run
   // so the review panel remounts with a fresh (all-checked) selection for each new suggestion set.
   const [pending, setPending] = useState<OnSaveResult["suggested"] | null>(null)
@@ -72,9 +82,15 @@ export function NoteWorkspace({ auth = devAuth() }: { auth?: AuthProvider }) {
   const [railOpen, setRailOpen] = useState(true)
   const clearDiff = () => setDiff(null)
 
-  // Global keyboard shortcuts: Cmd/Ctrl-K jump-to-note, Cmd/Ctrl-B fold the sidebar (focus mode).
+  // Global keyboard shortcuts: Cmd/Ctrl-K jump-to-note, Cmd/Ctrl-B fold the sidebar (focus mode),
+  // and "?" for the shortcut help. "?" is a bare key, so it stands down while the user is typing.
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "?" && !isEditableTarget(e.target)) {
+        e.preventDefault()
+        setHelpOpen((o) => !o)
+        return
+      }
       if (!(e.metaKey || e.ctrlKey)) return
       const key = e.key.toLowerCase()
       if (key === "k") {
@@ -358,6 +374,8 @@ export function NoteWorkspace({ auth = devAuth() }: { auth?: AuthProvider }) {
         }}
         onClose={() => setQuickOpen(false)}
       />
+
+      <ShortcutHelp open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
   )
 }

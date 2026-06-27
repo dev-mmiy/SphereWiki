@@ -69,6 +69,22 @@ describe("NoteWorkspace", () => {
     expect(screen.queryByRole("dialog", { name: "Quick switcher" })).toBeNull()
   })
 
+  it("opens the shortcut help on ? and not while typing into a field", () => {
+    render(<NoteWorkspace />)
+    expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull()
+    // A bare "?" anywhere outside a field opens the help.
+    fireEvent.keyDown(document.body, { key: "?" })
+    expect(screen.getByRole("dialog", { name: "Keyboard shortcuts" })).toBeTruthy()
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "Keyboard shortcuts" }), { key: "Escape" })
+    expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull()
+
+    // "?" typed into an input must NOT hijack the keystroke into the help overlay.
+    const search = screen.getByRole("region", { name: "Search" })
+    const box = within(search).getByRole("searchbox", { name: "Search notes" })
+    fireEvent.keyDown(box, { key: "?" })
+    expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull()
+  })
+
   it("commits a version when the Commit button is clicked (editor role)", () => {
     render(<NoteWorkspace />)
     expect(screen.queryAllByText(/revert/i)).toHaveLength(0)

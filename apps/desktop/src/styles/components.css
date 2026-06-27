@@ -255,6 +255,44 @@ ul.tag-chips {
   color: var(--muted);
 }
 
+/* Shortcut help — reuses the quick switcher's modal frame (.qs-overlay / .qs-backdrop / .qs-dialog). */
+.help-dialog {
+  padding: var(--space-4);
+}
+.help-title {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-base);
+}
+.help-list {
+  margin: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+.help-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+.help-row dt {
+  margin: 0;
+}
+.help-row dd {
+  margin: 0;
+  color: var(--muted);
+}
+.help-row kbd {
+  font: inherit;
+  font-size: var(--text-sm);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.help-close {
+  margin-top: var(--space-4);
+}
+
 /* Graph — token-driven so it follows light/dark (was hardcoded SVG hex). */
 .graph-edge {
   stroke: var(--border);
