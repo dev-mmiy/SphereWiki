@@ -360,14 +360,20 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
 
     let local: LocalDocPersistence | null = null
     let disconnect: (() => void) | null = null
+    const room = `${workspaceId}/${REGISTRY_ROOM}`
+    // Persist the note registry locally whenever a persistence seam is provided — independent of
+    // syncUrl. This is what makes the trash survive a reload offline: soft-delete is a registry
+    // TOMBSTONE (never a vault delete), so without persisting the registry, a deleted note would
+    // reappear after reload. The app always provides this; the bodies are already durable in the
+    // localStorage vault, so the registry (list + tombstones + remote-origin titles) is the piece
+    // that also needs a local store. Loading it triggers a reconcile so the trash is applied.
+    if (options.registryPersistence !== undefined) {
+      local = options.registryPersistence(registry, room)
+      void local.whenLoaded.then(() => {
+        if (!disposed) reconcile()
+      })
+    }
     if (syncUrl !== undefined) {
-      const room = `${workspaceId}/${REGISTRY_ROOM}`
-      if (options.registryPersistence !== undefined) {
-        local = options.registryPersistence(registry, room)
-        void local.whenLoaded.then(() => {
-          if (!disposed) reconcile()
-        })
-      }
       const connectRegistry = options.connectRegistry ?? connectRegistryToServer
       disconnect = connectRegistry(registry, {
         url: syncUrl,

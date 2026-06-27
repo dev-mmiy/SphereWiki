@@ -7,6 +7,7 @@ import { createAiMetricsRecorder } from "../metrics/ai-metrics"
 import type { ConnectRegistry } from "../sync/connect-registry"
 import type { ConnectNote } from "../sync/connect-server"
 import type { ConnectLocalPersistence } from "../sync/local-persistence"
+import type { ConnectRegistryPersistence } from "../sync/registry-persistence"
 import { useVaultWorkspace } from "./use-vault-workspace"
 
 const LOCAL = { actor: "local", kind: "human" } as const
@@ -54,6 +55,28 @@ function registryHub(): { connect: ConnectRegistry; server: YjsBackedRegistry } 
 function ids(prefix: string): () => string {
   let n = 0
   return () => `${prefix}-${(++n).toString()}`
+}
+
+/**
+ * An in-memory registry persistence whose backing buffer outlives a remount (a closure standing in
+ * for the real IndexedDB store), so a test can prove the note list + tombstones reload offline with
+ * no server. Loads the saved state into the doc on attach and re-saves on every change/destroy.
+ */
+function registryPersistenceStore(): ConnectRegistryPersistence {
+  let saved: Uint8Array | null = null
+  return (registry) => {
+    if (saved !== null) registry.applyUpdate(saved)
+    const off = registry.onUpdate(() => {
+      saved = registry.encodeState()
+    })
+    return {
+      whenLoaded: Promise.resolve(),
+      destroy: () => {
+        saved = registry.encodeState()
+        off()
+      },
+    }
+  }
 }
 
 describe("useVaultWorkspace", () => {
@@ -705,6 +728,38 @@ describe("useVaultWorkspace", () => {
 
     const second = renderHook(() => useVaultWorkspace(opts))
     expect(second.result.current.activeNote?.getText()).toContain("persisted body")
+    second.unmount()
+  })
+
+  it("persists the registry across a remount with no sync — the trash survives a reload", async () => {
+    const registryPersistence = registryPersistenceStore()
+    // Share the vault store too, so the deleted note's body is still around after the "reload".
+    const m = new Map<string, string>()
+    const vaultStorage = {
+      getItem: (k: string) => m.get(k) ?? null,
+      setItem: (k: string, v: string) => {
+        m.set(k, v)
+      },
+    }
+    const opts = { persistVaultKey: "test:vault:trash", vaultStorage, registryPersistence }
+
+    const first = renderHook(() => useVaultWorkspace(opts))
+    await flush()
+    const ideas = first.result.current.notes.find((x) => x.title === "Ideas")
+    if (ideas === undefined) throw new Error("expected Ideas")
+    act(() => first.result.current.remove(ideas.id))
+    expect(first.result.current.notes.some((x) => x.title === "Ideas")).toBe(false)
+    expect(first.result.current.deleted.some((x) => x.id === ideas.id)).toBe(true)
+    first.unmount()
+
+    // Reload: a fresh hook backed by the SAME vault + registry persistence (no sync configured).
+    const second = renderHook(() => useVaultWorkspace(opts))
+    await flush()
+    // The tombstone survived: Ideas is still out of the list and in the trash, and restorable.
+    expect(second.result.current.notes.some((x) => x.title === "Ideas")).toBe(false)
+    expect(second.result.current.deleted.some((x) => x.id === ideas.id)).toBe(true)
+    act(() => second.result.current.restore(ideas.id))
+    expect(second.result.current.notes.some((x) => x.title === "Ideas")).toBe(true)
     second.unmount()
   })
 
