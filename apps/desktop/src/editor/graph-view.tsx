@@ -28,8 +28,8 @@ function layout(nodes: readonly GraphNode[]): Map<string, { x: number; y: number
  * deterministic circle (no physics engine — cheap, stable, and unit-testable). A real node is a
  * button that navigates to its note; the active note is highlighted. A *dangling* node (a ghost:
  * a `[[link]]` whose note doesn't exist yet) is drawn dashed and, clicked, creates that note —
- * surfacing and growing the wiki's unwritten frontier. Presentation is via SVG attributes so it
- * renders without depending on a stylesheet.
+ * surfacing and growing the wiki's unwritten frontier. Node/edge colours are token-driven CSS, so
+ * the graph follows the light/dark theme; only geometry (positions, radius) is set inline.
  */
 export function GraphView({
   nodes,
@@ -74,8 +74,6 @@ export function GraphView({
               y1={a.y}
               x2={b.x}
               y2={b.y}
-              stroke="#94a3b8"
-              strokeWidth={1}
             />
           )
         })}
@@ -121,15 +119,9 @@ export function GraphView({
                 }
               }}
             >
-              <circle
-                cx={p.x}
-                cy={p.y}
-                r={NODE_R}
-                fill={active ? "#2563eb" : dangling ? "#f8fafc" : "#cbd5e1"}
-                stroke={dangling ? "#94a3b8" : "none"}
-                strokeDasharray={dangling ? "2 2" : undefined}
-              />
-              <text x={p.x} y={p.y - NODE_R - 3} textAnchor="middle" fontSize={9} fill="#334155">
+              {/* Colours come from the token-driven CSS (so the graph follows light/dark). */}
+              <circle cx={p.x} cy={p.y} r={NODE_R} />
+              <text x={p.x} y={p.y - NODE_R - 3} textAnchor="middle">
                 {node.title}
               </text>
             </g>

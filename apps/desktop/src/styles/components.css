@@ -103,3 +103,30 @@ ul.tag-chips {
 .kept-rate[data-state="low"] {
   color: var(--danger);
 }
+
+/* Graph — token-driven so it follows light/dark (was hardcoded SVG hex). */
+.graph-edge {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+.graph-node {
+  cursor: pointer;
+}
+.graph-node circle {
+  fill: var(--muted);
+}
+.graph-node text {
+  fill: var(--text);
+  font-size: 9px;
+}
+.graph-node-active circle {
+  fill: var(--accent);
+}
+.graph-node-dangling circle {
+  fill: var(--surface);
+  stroke: var(--muted);
+  stroke-dasharray: 2 2;
+}
+.graph-node-dangling[aria-disabled="true"] {
+  cursor: default;
+}
