@@ -1,4 +1,4 @@
-import type { OnSaveResult } from "@spherewiki/ai"
+import type { Autonomy, OnSaveResult } from "@spherewiki/ai"
 import { type AuthProvider, asNoteId, can, type DiffChunk, roleFor } from "@spherewiki/shared"
 import { CollapsiblePanel, ThemeToggle } from "@spherewiki/ui"
 import { useEffect, useState } from "react"
@@ -17,6 +17,7 @@ import { NoteEditor } from "./NoteEditor"
 import { NoteList } from "./note-list"
 import { QuickSwitcher } from "./quick-switcher"
 import { SearchPanel } from "./search-panel"
+import { SuggestionsReview } from "./suggestions-review"
 import { TagsPanel } from "./tags-panel"
 import { useVaultWorkspace } from "./use-vault-workspace"
 
@@ -60,6 +61,10 @@ export function NoteWorkspace({ auth = devAuth() }: { auth?: AuthProvider }) {
   const [diff, setDiff] = useState<readonly DiffChunk[] | null>(null)
   const [aiStatus, setAiStatus] = useState<string | null>(null)
   const [quickOpen, setQuickOpen] = useState(false)
+  // Pending AI suggestions awaiting human confirmation (suggest mode). `pendingKey` bumps per run
+  // so the review panel remounts with a fresh (all-checked) selection for each new suggestion set.
+  const [pending, setPending] = useState<OnSaveResult["suggested"] | null>(null)
+  const [pendingKey, setPendingKey] = useState(0)
   const clearDiff = () => setDiff(null)
 
   // Cmd/Ctrl-K toggles the quick switcher (keyboard-first "jump to note").
@@ -82,8 +87,28 @@ export function NoteWorkspace({ auth = devAuth() }: { auth?: AuthProvider }) {
     if (session === null) return
     void ws
       .aiOrganize(session)
-      .then((r) => setAiStatus(describeResult(r)))
+      .then((r) => {
+        setAiStatus(describeResult(r))
+        // Suggest mode surfaces candidates for review instead of applying them.
+        if (r.skippedReason === "autonomy-suggest" && r.suggested) {
+          setPending(r.suggested)
+          setPendingKey((k) => k + 1)
+        } else {
+          setPending(null)
+        }
+      })
       .catch(() => setAiStatus("AI: run failed"))
+  }
+
+  const applySuggestions = (selection: { links: string[]; tags: string[] }): void => {
+    if (session === null) return
+    void ws
+      .aiApplySuggestions(session, selection)
+      .then((r) => {
+        setAiStatus(describeResult(r))
+        setPending(null)
+      })
+      .catch(() => setAiStatus("AI: apply failed"))
   }
 
   return (
@@ -170,8 +195,32 @@ export function NoteWorkspace({ auth = devAuth() }: { auth?: AuthProvider }) {
             <button type="button" onClick={runAi} disabled={!canWrite || ws.aiBusy}>
               Organize with AI
             </button>
+            <label className="ai-mode">
+              Mode
+              <select
+                aria-label="AI mode"
+                value={ws.aiAutonomy}
+                onChange={(e) => {
+                  ws.setAiAutonomy(e.target.value as Autonomy)
+                  setPending(null) // a mode change supersedes any pending review
+                }}
+              >
+                <option value="off">Off</option>
+                <option value="suggest">Suggest</option>
+                <option value="auto">Auto</option>
+              </select>
+            </label>
             {aiStatus && <span className="ai-status">{aiStatus}</span>}
           </div>
+          {pending && (
+            <SuggestionsReview
+              key={pendingKey}
+              suggested={pending}
+              busy={ws.aiBusy}
+              onApply={applySuggestions}
+              onDismiss={() => setPending(null)}
+            />
+          )}
           {diff && <DiffView chunks={diff} />}
         </main>
 

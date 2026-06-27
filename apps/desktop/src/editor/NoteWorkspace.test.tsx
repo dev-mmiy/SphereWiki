@@ -23,6 +23,13 @@ describe("NoteWorkspace", () => {
     expect(document.querySelector(".cm-editor")).not.toBeNull()
   })
 
+  it("exposes the AI autonomy selector, defaulting to Auto", () => {
+    render(<NoteWorkspace />)
+    const mode = screen.getByRole("combobox", { name: "AI mode" }) as HTMLSelectElement
+    expect(mode.value).toBe("auto")
+    expect(within(mode).getByRole("option", { name: "Suggest" })).toBeTruthy()
+  })
+
   it("opens the quick switcher on Cmd-K and dismisses it on Escape", () => {
     render(<NoteWorkspace />)
     expect(screen.queryByRole("dialog", { name: "Quick switcher" })).toBeNull()

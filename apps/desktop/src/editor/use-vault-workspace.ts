@@ -1,11 +1,13 @@
 import {
   type Answerer,
+  type Autonomy,
   createExtractiveAnswerer,
   createHeuristicSuggester,
   createLocalEmbedder,
   createMemoryVectorIndex,
   createRagRetriever,
   type EmbeddingProvider,
+  type LinkSuggestion,
   type NoteContext,
   type OnSaveResult,
   type RagAnswer,
@@ -13,6 +15,7 @@ import {
   reindexWorkspace,
   runOnSaveAgent,
   type SuggestionProvider,
+  type TagSuggestion,
   type VectorIndex,
 } from "@spherewiki/ai"
 import {
@@ -137,6 +140,14 @@ export interface VaultWorkspace {
   diffAgainstCurrent: (id: string) => DiffChunk[]
   /** Run the on-save AI agent on the active note; AI edits land as attributed, revertible versions. */
   aiOrganize: (session: Session) => Promise<OnSaveResult>
+  /** Apply a human-confirmed subset of suggestions (suggest-mode accept) via the same AI write path. */
+  aiApplySuggestions: (
+    session: Session,
+    selection: { links: readonly string[]; tags: readonly string[] },
+  ) => Promise<OnSaveResult>
+  /** The workspace's AI autonomy: `off` / `suggest` (review-before-apply) / `auto`. */
+  readonly aiAutonomy: Autonomy
+  setAiAutonomy: (autonomy: Autonomy) => void
   /** True while an AI run is in flight (so the UI can prevent concurrent runs). */
   readonly aiBusy: boolean
   /** Accumulated kept-vs-reverted counters for the AI agent's edits (the M5 dogfooding signal). */
@@ -275,6 +286,7 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
   const [versions, setVersions] = useState<readonly Version[]>([])
   const [aiBusy, setAiBusy] = useState(false)
   const [aiMetrics, setAiMetrics] = useState<AiEditMetrics>(() => aiMetricsRecorder.snapshot())
+  const [aiAutonomy, setAiAutonomy] = useState<Autonomy>("auto")
   const [deleted, setDeleted] = useState<readonly NoteMeta[]>([])
 
   // Live active id, read by callbacks that outlive a render: an in-flight AI run (to tell if the
@@ -688,7 +700,10 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
       past.destroy()
     }
   }
-  const aiOrganize = async (session: Session): Promise<OnSaveResult> => {
+  const runAgentOnActive = async (
+    session: Session,
+    opts: { autonomy: Autonomy; suggester?: SuggestionProvider },
+  ): Promise<OnSaveResult> => {
     const ai = aiRef.current
     if (activeNote === null || ai === null || aiBusyRef.current) {
       return { links: [], tags: [], versionId: null, applied: false }
@@ -715,8 +730,9 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
           store: storeFor(targetId),
           index: ai.index,
           others,
+          autonomy: opts.autonomy,
         },
-        { suggester: ai.suggester, embedder: ai.embedder },
+        { suggester: opts.suggester ?? ai.suggester, embedder: ai.embedder },
       )
       // Persist directly to the vault: if the user switched notes mid-run, the note's own
       // subscribe-writer was torn down, so don't depend on it — keep Markdown the source of
@@ -736,6 +752,29 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
       aiBusyRef.current = false
       setAiBusy(false)
     }
+  }
+  // Run the agent at the workspace's current autonomy: `auto` applies, `suggest` only surfaces
+  // candidates (in `result.suggested`), `off` does nothing.
+  const aiOrganize = (session: Session): Promise<OnSaveResult> =>
+    runAgentOnActive(session, { autonomy: aiAutonomy })
+  // Apply a human-confirmed subset of suggestions. A one-shot suggester returns exactly the
+  // selection, then the agent runs in `auto` so the edit lands through the SAME attributed,
+  // revertible write path as on-save (no second, divergent apply path to keep correct).
+  const aiApplySuggestions = (
+    session: Session,
+    selection: { links: readonly string[]; tags: readonly string[] },
+  ): Promise<OnSaveResult> => {
+    const idForTitle = (title: string): NoteId =>
+      vault.list().find((m) => m.title === title)?.id ?? asNoteId(title)
+    const suggester: SuggestionProvider = {
+      suggest: async () => ({
+        links: selection.links.map(
+          (title): LinkSuggestion => ({ kind: "link", title, targetId: idForTitle(title) }),
+        ),
+        tags: selection.tags.map((tag): TagSuggestion => ({ kind: "tag", tag })),
+      }),
+    }
+    return runAgentOnActive(session, { autonomy: "auto", suggester })
   }
   const aiAsk = async (query: string): Promise<RagAnswer> => {
     const ai = aiRef.current
@@ -772,6 +811,9 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     revert,
     diffAgainstCurrent,
     aiOrganize,
+    aiApplySuggestions,
+    aiAutonomy,
+    setAiAutonomy,
     aiBusy,
     aiMetrics,
     aiAsk,

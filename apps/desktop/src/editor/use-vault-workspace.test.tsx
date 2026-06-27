@@ -268,6 +268,48 @@ describe("useVaultWorkspace", () => {
     expect(result.current.aiMetrics.reverted).toBe(1)
   })
 
+  it("suggest mode surfaces candidates without applying them", async () => {
+    const { result } = renderHook(() => useVaultWorkspace())
+    const session = devAuth("editor").session()
+    if (session === null) throw new Error("expected a session")
+    act(() => result.current.setAiAutonomy("suggest"))
+    let res: OnSaveResult | undefined
+    await act(async () => {
+      res = await result.current.aiOrganize(session)
+    })
+    expect(res?.applied).toBe(false)
+    expect(res?.skippedReason).toBe("autonomy-suggest")
+    expect(
+      (res?.suggested?.links.length ?? 0) + (res?.suggested?.tags.length ?? 0),
+    ).toBeGreaterThan(0)
+    expect(result.current.tags).toEqual([]) // nothing was applied
+    expect(result.current.aiMetrics.applied).toBe(0)
+  })
+
+  it("aiApplySuggestions applies a human-confirmed subset via the AI write path", async () => {
+    const { result } = renderHook(() => useVaultWorkspace())
+    const session = devAuth("editor").session()
+    if (session === null) throw new Error("expected a session")
+    act(() => result.current.setAiAutonomy("suggest"))
+    let suggested: OnSaveResult["suggested"]
+    await act(async () => {
+      suggested = (await result.current.aiOrganize(session)).suggested
+    })
+    const tags = [...(suggested?.tags ?? [])]
+    expect(tags.length).toBeGreaterThan(0)
+
+    // Confirm just the tags (no links) → they land, attributed + counted like an AI edit.
+    let applied: OnSaveResult | undefined
+    await act(async () => {
+      applied = await result.current.aiApplySuggestions(session, { links: [], tags })
+    })
+    expect(applied?.applied).toBe(true)
+    expect(result.current.tags).toEqual(expect.arrayContaining(tags))
+    expect(result.current.aiMetrics.applied).toBe(1)
+    // The applied edit is a revertible AI version in history.
+    expect(result.current.versions.some((v) => v.origin.kind === "ai")).toBe(true)
+  })
+
   it("groups visible notes by tag for navigation (notesForTag)", () => {
     const { result } = renderHook(() => useVaultWorkspace())
     act(() => result.current.activeNote?.setText("---\ntags:\n  - shared\n---\n# Home\n", LOCAL))

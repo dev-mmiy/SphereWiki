@@ -104,6 +104,75 @@ ul.tag-chips {
   color: var(--danger);
 }
 
+/* AI mode selector (Off / Suggest / Auto) in the action bar. */
+.ai-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+.ai-mode select {
+  width: auto;
+}
+
+/* Suggest-mode review: candidate links/tags the human ticks to apply (or dismisses). */
+.suggestions {
+  padding: var(--space-3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--ai); /* AI hue — same attribution language as history rows */
+  border-radius: var(--radius);
+}
+.suggestions h3 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--ai);
+}
+.suggestion-group {
+  margin: 0 0 var(--space-2);
+  padding: 0;
+  border: 0;
+}
+.suggestion-group legend {
+  padding: 0;
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.suggestion-group ul {
+  list-style: none;
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.suggestion-group label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+}
+.suggestion-group input {
+  width: auto;
+}
+.suggestions-actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+.suggestions-apply {
+  border-color: var(--border);
+  background: var(--ai);
+  color: var(--accent-contrast);
+}
+.suggestions-apply:hover:not(:disabled) {
+  background: var(--ai);
+  filter: brightness(1.05);
+}
+
 /* Quick switcher (Cmd-K) — a centered command palette over a dimming backdrop. The backdrop is a
  * real (keyboard-dismissable) button behind the dialog; the dialog is a sibling above it. */
 .qs-overlay {
