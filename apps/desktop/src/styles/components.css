@@ -104,6 +104,27 @@ ul.tag-chips {
   color: var(--danger);
 }
 
+/* Sync status pill (topbar) — a coloured dot + label for the active note's sync state. */
+.sync-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+.sync-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.sync-status[data-status="synced"] .sync-dot {
+  background: var(--success);
+}
+.sync-status[data-status="syncing"] .sync-dot {
+  background: var(--accent);
+}
+
 /* AI mode selector (Off / Suggest / Auto) in the action bar. */
 .ai-mode {
   display: inline-flex;

@@ -235,6 +235,26 @@ describe("useVaultWorkspace", () => {
     expect(result.current.tags).toEqual(["planning"])
   })
 
+  it("reports sync status: 'local' with no sync configured", () => {
+    const { result } = renderHook(() => useVaultWorkspace())
+    expect(result.current.syncStatus).toBe("local")
+  })
+
+  it("reports sync status: 'syncing' for a synced room until it hydrates", () => {
+    const connect: ConnectNote = () => () => {} // connects but never hydrates
+    const { result } = renderHook(() => useVaultWorkspace({ syncUrl: "ws://x", connect }))
+    expect(result.current.syncStatus).toBe("syncing")
+  })
+
+  it("reports sync status: 'synced' once a synced room hydrates", () => {
+    const connect: ConnectNote = (_note, opts) => {
+      opts.onHydrated()
+      return () => {}
+    }
+    const { result } = renderHook(() => useVaultWorkspace({ syncUrl: "ws://x", connect }))
+    expect(result.current.syncStatus).toBe("synced")
+  })
+
   it("surfaces AI-added tags (auto-tag becomes visible)", async () => {
     const { result } = renderHook(() => useVaultWorkspace())
     const session = devAuth("editor").session()

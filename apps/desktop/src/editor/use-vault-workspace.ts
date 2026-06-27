@@ -94,12 +94,21 @@ export interface OutgoingLink {
   readonly exists: boolean
 }
 
+/**
+ * The active note's sync state for the UI: `local` (no sync configured — offline-first by
+ * default), `syncing` (a synced room awaiting its first authoritative state), or `synced`
+ * (state has loaded; edits flow to peers / the super-peer).
+ */
+export type SyncState = "local" | "syncing" | "synced"
+
 export interface VaultWorkspace {
   readonly notes: readonly NoteMeta[]
   readonly activeId: NoteId
   readonly activeNote: YjsBackedNote | null
   /** True once the active note's authoritative state has loaded (always true in no-sync mode). */
   readonly hydrated: boolean
+  /** Coarse sync state for the active note, for a status indicator. */
+  readonly syncStatus: SyncState
   readonly outgoing: readonly OutgoingLink[]
   readonly backlinks: readonly NoteMeta[]
   /** Node/edge model of the whole workspace's notes and their wikilinks — the basic graph view. */
@@ -790,6 +799,8 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     activeId,
     activeNote,
     hydrated,
+    // No sync configured → "local"; a synced room shows "syncing" until its state hydrates.
+    syncStatus: syncUrl === undefined ? "local" : hydrated ? "synced" : "syncing",
     outgoing,
     backlinks,
     graph: graphModel,

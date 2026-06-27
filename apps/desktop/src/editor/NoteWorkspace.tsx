@@ -18,6 +18,7 @@ import { NoteList } from "./note-list"
 import { QuickSwitcher } from "./quick-switcher"
 import { SearchPanel } from "./search-panel"
 import { SuggestionsReview } from "./suggestions-review"
+import { SyncStatus } from "./sync-status"
 import { TagsPanel } from "./tags-panel"
 import { useVaultWorkspace } from "./use-vault-workspace"
 
@@ -116,6 +117,7 @@ export function NoteWorkspace({ auth = devAuth() }: { auth?: AuthProvider }) {
       <header className="topbar">
         <h1 className="brand">{appTitle()}</h1>
         <div className="topbar-meta">
+          <SyncStatus status={ws.syncStatus} />
           <span className="who">
             {session ? `${session.account.email} · ${role ?? "no access"}` : "signed out"}
           </span>
