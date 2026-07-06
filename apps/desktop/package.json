@@ -7,7 +7,10 @@
     "dev": "vite",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "dev:desktop": "tauri dev",
+    "build:desktop": "tauri build",
+    "check:rust": "cargo check --manifest-path src-tauri/Cargo.toml"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.0.0",
@@ -16,6 +19,7 @@
     "@spherewiki/ai": "workspace:*",
     "@spherewiki/shared": "workspace:*",
     "@spherewiki/ui": "workspace:*",
+    "@tauri-apps/api": "^2.9.0",
     "codemirror": "^6.0.2",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
@@ -25,6 +29,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
+    "@tauri-apps/cli": "^2.9.0",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.2",
     "@types/react": "^19.2.17",

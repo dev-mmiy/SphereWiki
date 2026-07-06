@@ -18,3 +18,14 @@ if (container) {
     </StrictMode>,
   )
 }
+
+// Tauri IPC smoke: under the native shell only (never in the browser build or tests), prove the
+// frontend <-> Rust bridge works. Dynamic-imported behind the runtime guard so the web bundle never
+// loads @tauri-apps/api. This is the seam the vault / DuckDB commands (M2b.3+) will use.
+if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+  void import("@tauri-apps/api/core").then(({ invoke }) =>
+    invoke<string>("ping")
+      .then((reply) => console.info("[tauri] ping ->", reply))
+      .catch((error) => console.error("[tauri] ping failed", error)),
+  )
+}

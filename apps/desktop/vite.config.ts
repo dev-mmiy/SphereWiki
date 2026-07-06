@@ -4,6 +4,11 @@ import { defineConfig } from "vite"
 
 export default defineConfig({
   plugins: [react()],
+  // Tauri expects the dev server on a fixed, known port and its own output kept intact.
+  clearScreen: false,
+  server: { port: 5173, strictPort: true },
+  // Expose TAURI_ENV_* to the client alongside the app's own VITE_* (Tauri sets these under `tauri dev`).
+  envPrefix: ["VITE_", "TAURI_ENV_"],
   resolve: {
     alias: {
       // Resolve the workspace packages to source so the loop needs no build ordering.
