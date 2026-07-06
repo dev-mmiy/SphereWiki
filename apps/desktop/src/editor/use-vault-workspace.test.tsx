@@ -1,5 +1,11 @@
 import type { OnSaveResult, RagAnswer, SuggestionProvider } from "@spherewiki/ai"
-import { openYjsRegistry, type YjsBackedRegistry } from "@spherewiki/shared"
+import {
+  createFileBackedVault,
+  type FsPort,
+  openYjsRegistry,
+  parseNote,
+  type YjsBackedRegistry,
+} from "@spherewiki/shared"
 import { act, renderHook } from "@testing-library/react"
 import { describe, expect, it } from "vitest"
 import { localAuth } from "../auth-local"
@@ -8,7 +14,37 @@ import type { ConnectRegistry } from "../sync/connect-registry"
 import type { ConnectNote, ServerSyncOptions } from "../sync/connect-server"
 import type { ConnectLocalPersistence } from "../sync/local-persistence"
 import type { ConnectRegistryPersistence } from "../sync/registry-persistence"
-import { useVaultWorkspace } from "./use-vault-workspace"
+import { SEED, useVaultWorkspace } from "./use-vault-workspace"
+
+/** A byte-exact in-memory FsPort so a real file-backed vault can drive the hook (as under Tauri). */
+function fakeFs(store = new Map<string, string>()): FsPort {
+  const dirOf = (dir: string) => (dir.endsWith("/") ? dir : `${dir}/`)
+  return {
+    readdir: async (dir) => {
+      const prefix = dirOf(dir)
+      const names = new Set<string>()
+      for (const path of store.keys()) {
+        if (path.startsWith(prefix)) names.add(path.slice(prefix.length).split("/")[0] as string)
+      }
+      return [...names]
+    },
+    readFile: async (path) => {
+      const value = store.get(path)
+      if (value === undefined) throw new Error(`ENOENT: ${path}`)
+      return value
+    },
+    writeFile: async (path, content) => {
+      store.set(path, content)
+    },
+    rename: async (from, to) => {
+      const value = store.get(from)
+      if (value === undefined) throw new Error(`ENOENT: ${from}`)
+      store.set(to, value)
+      store.delete(from)
+    },
+    mkdir: async () => {},
+  }
+}
 
 const LOCAL = { actor: "local", kind: "human" } as const
 
@@ -1227,5 +1263,34 @@ describe("useVaultWorkspace", () => {
     act(() => result.current.restore(spec.id))
     expect(result.current.notes.some((m) => m.id === spec.id)).toBe(true)
     hub.server.destroy()
+  })
+
+  it("rename of the active on-disk note updates the open doc's frontmatter title (no on-disk revert)", async () => {
+    // Reproduces the file-vault-specific hazard: the open note's doc carries `title:` in its
+    // frontmatter, so a rename that only touched the registry/vault would be reverted on disk by the
+    // next doc-persist. An injected, pre-hydrated file vault (as under Tauri) drives the hook.
+    const built = createFileBackedVault({
+      fs: fakeFs(),
+      root: "ws",
+      seed: SEED,
+      newId: (() => {
+        let n = 0
+        return () => `seed-${(++n).toString()}`
+      })(),
+    })
+    await built.whenLoaded
+    const { result } = renderHook(() => useVaultWorkspace({ vault: built.vault }))
+
+    const homeId = result.current.activeId // "Home" is the first seed note, active by default
+    expect(parseNote(result.current.activeNote?.getText() ?? "").frontmatter.title).toBe("Home")
+
+    act(() => result.current.rename(homeId, "Casa"))
+
+    // The open doc's frontmatter title is updated, so the doc-persist writes "Casa" to disk — the
+    // Markdown (source of truth), the vault, and the registry all agree.
+    expect(parseNote(result.current.activeNote?.getText() ?? "").frontmatter.title).toBe("Casa")
+    await built.flush()
+    expect(parseNote(built.vault.read(homeId)).frontmatter.title).toBe("Casa")
+    expect(result.current.notes.find((m) => m.id === homeId)?.title).toBe("Casa")
   })
 })

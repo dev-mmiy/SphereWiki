@@ -1,5 +1,7 @@
+mod vault;
+
 /// A trivial IPC command proving the frontend <-> Rust bridge works. The real vault / DuckDB
-/// commands (M2b.3+) register here the same way, each allow-listed in `capabilities/`.
+/// commands register alongside it in the invoke handler.
 #[tauri::command]
 fn ping() -> String {
   // Logged (forwarded to stdout by tauri-plugin-log in debug) so the IPC round-trip is observable.
@@ -20,7 +22,13 @@ pub fn run() {
       }
       Ok(())
     })
-    .invoke_handler(tauri::generate_handler![ping])
+    .invoke_handler(tauri::generate_handler![
+      ping,
+      vault::vault_list_files,
+      vault::vault_read_file,
+      vault::vault_write_file,
+      vault::vault_rename_file
+    ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }

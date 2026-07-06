@@ -46,6 +46,7 @@ import {
   searchNotes,
   type TagIndex,
   textDiff,
+  upsertFrontmatter,
   type Vault,
   type Version,
   type VersionStore,
@@ -75,7 +76,9 @@ const REGISTRY_ROOM = "__registry__"
 
 const LOCAL: EditOrigin = { actor: "local", kind: "human" }
 
-const SEED: ReadonlyArray<{ title: string; body: string }> = [
+/** The first-run seed notes. Exported so a pre-hydrated injected vault (the Tauri file vault) can
+ * seed with the exact same content the in-memory / localStorage vaults use. */
+export const SEED: ReadonlyArray<{ title: string; body: string }> = [
   { title: "Home", body: "# Home\n\nWelcome. See [[Getting Started]] and [[Ideas]].\n" },
   { title: "Getting Started", body: "# Getting Started\n\nBack to [[Home]].\n" },
   { title: "Ideas", body: "# Ideas\n\n- AI auto-links notes\n- See [[Home]]\n" },
@@ -169,6 +172,13 @@ export interface VaultWorkspace {
 
 export interface UseVaultWorkspaceOptions {
   readonly workspaceId?: WorkspaceId
+  /**
+   * Inject a pre-built, already-hydrated Vault (the on-disk Tauri file vault under the native shell;
+   * see `createTauriVault`). Takes precedence over `persistVaultKey`; when omitted the hook builds a
+   * localStorage vault (web) or an in-memory one (tests). Must be hydrated before injection so its
+   * `list()`/`read()` are synchronously ready — the hook treats it exactly like the built-in vaults.
+   */
+  readonly vault?: Vault
   /** Inject AI providers (the real Claude/ONNX backends at M4b; deterministic stubs in tests). */
   readonly suggester?: SuggestionProvider
   readonly embedder?: EmbeddingProvider
@@ -225,7 +235,10 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
   const vaultRef = useRef<Vault | null>(null)
   if (vaultRef.current === null) {
     vaultRef.current =
-      options.persistVaultKey !== undefined
+      // An injected, already-hydrated vault (the on-disk Tauri file vault) wins; else the durable
+      // localStorage vault (web) or an in-memory one (tests).
+      options.vault ??
+      (options.persistVaultKey !== undefined
         ? createLocalStorageVault(SEED, {
             key: options.persistVaultKey,
             ...(options.vaultStorage !== undefined ? { storage: options.vaultStorage } : {}),
@@ -234,7 +247,7 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
         : createMemoryVault(
             SEED,
             options.newNoteId !== undefined ? { newId: options.newNoteId } : {},
-          )
+          ))
   }
   const vault = vaultRef.current
 
@@ -721,7 +734,16 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     // The open note: rewrite through the CRDT doc so the edit is attributed, synced, and revertible.
     if (activeNote !== null) {
       const body = activeNote.getText()
-      const next = renameWikiLinkTargets(body, oldTitle, newTitle)
+      let next = renameWikiLinkTargets(body, oldTitle, newTitle)
+      // If the OPEN note is the one being renamed AND its Markdown carries the title in frontmatter
+      // (the on-disk file-vault convention), update that frontmatter title in the doc too. Otherwise
+      // the doc-persist (which writes the whole `.md` source back for the file vault) would revert
+      // `vault.rename`'s title change on disk, diverging Markdown from the registry. For a bare-body
+      // note (localStorage — title is separate metadata) `frontmatter.title` is absent, so this is
+      // skipped and no frontmatter is ever added.
+      if (activeId === id && parseNote(next).frontmatter.title !== undefined) {
+        next = upsertFrontmatter(next, { title: newTitle })
+      }
       if (next !== body) activeNote.setText(next, LOCAL)
     }
 
