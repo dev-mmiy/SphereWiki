@@ -1,4 +1,10 @@
-import { parse as parseYaml, stringify as stringifyYaml } from "yaml"
+import {
+  Document,
+  isMap,
+  parseDocument,
+  parse as parseYaml,
+  stringify as stringifyYaml,
+} from "yaml"
 import type { Frontmatter, ParsedNote } from "./types"
 
 const DELIMITER = "---"
@@ -81,4 +87,36 @@ export function withNoteBody(source: string, transform: (body: string) => string
   const next = transform(body)
   if (next === body) return source
   return yaml === null ? next : `${DELIMITER}\n${yaml}\n${DELIMITER}\n${next}`
+}
+
+/**
+ * Set (insert-or-update) string frontmatter keys, preserving everything else. The edit is
+ * *surgical* like `addNoteTag` — the frontmatter YAML is parsed as a Document and only the given
+ * keys are set, so sibling keys, their scalar token forms, comments, and the **body bytes** are
+ * preserved; a note with no frontmatter gains a minimal block. Used to place note identity
+ * (`id:`, `title:`) into the Markdown so a file-backed vault is rebuildable from `.md` alone
+ * (D2), without the whole-frontmatter re-canonicalization `stringifyNote` would impose. Malformed
+ * existing YAML is left untouched (returns the source verbatim) rather than risking corruption.
+ */
+export function upsertFrontmatter(source: string, entries: Record<string, string>): string {
+  const keys = Object.keys(entries)
+  if (keys.length === 0) return source
+
+  const prepend = (onto: string): string => {
+    const doc = new Document(undefined)
+    for (const key of keys) doc.set(key, entries[key])
+    return `${DELIMITER}\n${doc.toString()}${DELIMITER}\n${onto}`
+  }
+
+  const { yaml, body } = splitFrontmatter(source)
+  if (yaml === null) return prepend(body) // no frontmatter → add a minimal block above the body
+
+  const doc = parseDocument(yaml)
+  // A leading `---…---` region that isn't a YAML *mapping* (a `---` rule, a scalar, or a list) is
+  // not real frontmatter and `doc.set` would throw on it — treat the whole source as body and
+  // prepend a fresh block, so a note that opens with `---` is never corrupted or dropped.
+  if (doc.errors.length > 0 || (doc.contents !== null && !isMap(doc.contents)))
+    return prepend(source)
+  for (const key of keys) doc.set(key, entries[key])
+  return `${DELIMITER}\n${doc.toString()}${DELIMITER}\n${body}`
 }

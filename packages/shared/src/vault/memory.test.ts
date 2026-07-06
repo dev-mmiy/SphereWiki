@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest"
 import { asNoteId } from "../types"
 import { buildLinkGraph } from "../wikilink"
+import { runVaultContract } from "./contract"
 import { createMemoryVault } from "./memory"
+
+// The shared 6-method contract, proven against the memory impl (file + localStorage prove it too).
+runVaultContract("memory vault", async (seed) => createMemoryVault(seed))
 
 describe("memory vault", () => {
   it("creates, lists, reads, and writes notes", () => {
