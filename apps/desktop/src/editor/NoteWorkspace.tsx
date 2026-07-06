@@ -72,6 +72,7 @@ export function NoteWorkspace({ auth = localAuth() }: { auth?: AuthProvider }) {
   // When syncing, a local CRDT cache (IndexedDB) keeps the room readable offline.
   const ws = useVaultWorkspace({
     syncUrl: import.meta.env.VITE_SYNC_URL,
+    syncToken: import.meta.env.VITE_SYNC_TOKEN,
     persistVaultKey: `spherewiki:vault:${WORKSPACE_ID}`,
     persistVersionsKey: `spherewiki:versions:${WORKSPACE_ID}`,
     persistSessionKey: `spherewiki:session:${WORKSPACE_ID}`,

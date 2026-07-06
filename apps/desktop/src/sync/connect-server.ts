@@ -6,6 +6,11 @@ export interface ServerSyncOptions {
   readonly url: string
   /** Room name; scope per workspace + note so rooms never co-mingle. */
   readonly room: string
+  /**
+   * Auth token presented to the super-peer on join, verified by the server's RoomAuthorizer
+   * when one is configured. Omitted → none is sent, matching the open-rooms local default.
+   */
+  readonly token?: string
   /** Called once the room has finished its initial sync from the super-peer. */
   readonly onHydrated: () => void
 }
@@ -26,6 +31,7 @@ export const connectNoteToServer: ConnectNote = (note, options) => {
     url: options.url,
     name: options.room,
     document: note.ydoc,
+    ...(options.token !== undefined ? { token: options.token } : {}),
   })
   provider.on("synced", options.onHydrated)
   return () => provider.destroy()

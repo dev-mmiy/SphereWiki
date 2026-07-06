@@ -19,6 +19,7 @@ export const connectRegistryToServer: ConnectRegistry = (registry, options) => {
     url: options.url,
     name: options.room,
     document: registry.ydoc,
+    ...(options.token !== undefined ? { token: options.token } : {}),
   })
   provider.on("synced", options.onHydrated)
   return () => provider.destroy()

@@ -174,6 +174,12 @@ export interface UseVaultWorkspaceOptions {
   readonly embedder?: EmbeddingProvider
   /** When set, the active note syncs live through the super-peer at this WebSocket URL. */
   readonly syncUrl?: string
+  /**
+   * Auth token presented when joining synced rooms (note bodies AND the registry), verified
+   * by the server's RoomAuthorizer. Only meaningful with `syncUrl`; omitted → open rooms
+   * (the local default). Inert until a token issuer (WorkOS) lands — this readies the seam.
+   */
+  readonly syncToken?: string
   /** Inject the sync transport (the real super-peer in the app; a fake in tests). */
   readonly connect?: ConnectNote
   /**
@@ -215,6 +221,7 @@ export interface UseVaultWorkspaceOptions {
 export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): VaultWorkspace {
   const workspaceId = options.workspaceId ?? WORKSPACE_ID
   const syncUrl = options.syncUrl
+  const syncToken = options.syncToken
   const vaultRef = useRef<Vault | null>(null)
   if (vaultRef.current === null) {
     vaultRef.current =
@@ -427,6 +434,7 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
       disconnect = connectRegistry(registry, {
         url: syncUrl,
         room,
+        ...(syncToken !== undefined ? { token: syncToken } : {}),
         onHydrated: () => {
           if (!disposed) reconcile()
         },
@@ -446,6 +454,7 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     unionList,
     deletedList,
     syncUrl,
+    syncToken,
     workspaceId,
     options.connectRegistry,
     options.registryPersistence,
@@ -509,7 +518,12 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
         })
       }
       // The super-peer is authoritative; it merges on top of any local cache via CRDT.
-      disconnect = connect(note, { url: syncUrl, room, onHydrated: markHydrated })
+      disconnect = connect(note, {
+        url: syncUrl,
+        room,
+        ...(syncToken !== undefined ? { token: syncToken } : {}),
+        onHydrated: markHydrated,
+      })
     } else {
       note.setText(vault.read(activeId), LOCAL)
       becomeHydrated()
@@ -530,7 +544,16 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
       local?.destroy()
       note.destroy()
     }
-  }, [activeId, vault, storeFor, syncUrl, workspaceId, options.connect, options.localPersistence])
+  }, [
+    activeId,
+    vault,
+    storeFor,
+    syncUrl,
+    syncToken,
+    workspaceId,
+    options.connect,
+    options.localPersistence,
+  ])
 
   // Expose the active doc only when it matches the active id AND that note isn't tombstoned —
   // so deleting the last visible note (or a peer deleting the one you're on) can't leave an

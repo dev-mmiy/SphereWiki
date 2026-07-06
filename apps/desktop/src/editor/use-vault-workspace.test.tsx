@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest"
 import { localAuth } from "../auth-local"
 import { createAiMetricsRecorder } from "../metrics/ai-metrics"
 import type { ConnectRegistry } from "../sync/connect-registry"
-import type { ConnectNote } from "../sync/connect-server"
+import type { ConnectNote, ServerSyncOptions } from "../sync/connect-server"
 import type { ConnectLocalPersistence } from "../sync/local-persistence"
 import type { ConnectRegistryPersistence } from "../sync/registry-persistence"
 import { useVaultWorkspace } from "./use-vault-workspace"
@@ -276,6 +276,38 @@ describe("useVaultWorkspace", () => {
     }
     const { result } = renderHook(() => useVaultWorkspace({ syncUrl: "ws://x", connect }))
     expect(result.current.syncStatus).toBe("synced")
+  })
+
+  it("threads the sync token into BOTH the note and registry connect seams", () => {
+    // The room-auth client half: the server's RoomAuthorizer gates every room join, so the
+    // token must reach the note-body room AND the registry room — a missing registry token
+    // would sync bodies but never the note list.
+    let noteToken: string | undefined
+    let registryToken: string | undefined
+    const connect: ConnectNote = (_note, opts) => {
+      noteToken = opts.token
+      return () => {}
+    }
+    const connectRegistry: ConnectRegistry = (_reg, opts) => {
+      registryToken = opts.token
+      return () => {}
+    }
+    renderHook(() =>
+      useVaultWorkspace({ syncUrl: "ws://x", syncToken: "grant:ws", connect, connectRegistry }),
+    )
+    expect(noteToken).toBe("grant:ws")
+    expect(registryToken).toBe("grant:ws")
+  })
+
+  it("presents no token when none is configured (open rooms stay zero-config)", () => {
+    let noteOpts: ServerSyncOptions | undefined
+    const connect: ConnectNote = (_note, opts) => {
+      noteOpts = opts
+      return () => {}
+    }
+    renderHook(() => useVaultWorkspace({ syncUrl: "ws://x", connect }))
+    expect(noteOpts).toBeDefined()
+    expect(noteOpts).not.toHaveProperty("token")
   })
 
   it("surfaces AI-added tags (auto-tag becomes visible)", async () => {
