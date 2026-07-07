@@ -1,5 +1,5 @@
 import { asNoteId, type NoteMeta } from "@spherewiki/shared"
-import { cleanup, render, screen, within } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { NoteList } from "./note-list"
 
@@ -50,7 +50,7 @@ describe("NoteList — folder tree (v1b)", () => {
     expect(within(workDetails).queryByRole("button", { name: "Home" })).toBeNull()
   })
 
-  it("still wires per-note rename/delete inside a folder", () => {
+  it("renames via an inline input (Enter commits the typed title) — works without window.prompt", () => {
     const onRename = vi.fn()
     render(
       <NoteList
@@ -62,8 +62,30 @@ describe("NoteList — folder tree (v1b)", () => {
         onDelete={vi.fn()}
       />,
     )
-    screen.getByLabelText("Rename Meeting").click()
-    expect(onRename).toHaveBeenCalledWith(asNoteId("m"))
+    // The ✎ opens an in-app text input (no browser prompt, which Tauri's WKWebView can't show).
+    fireEvent.click(screen.getByLabelText("Rename Meeting"))
+    const input = screen.getByLabelText("Rename Meeting") // now the input carries the label
+    expect((input as HTMLInputElement).value).toBe("Meeting") // seeded with the current title
+    fireEvent.change(input, { target: { value: "Standup" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+    expect(onRename).toHaveBeenCalledWith(asNoteId("m"), "Standup")
+  })
+
+  it("cancels an inline rename on Escape without calling onRename", () => {
+    const onRename = vi.fn()
+    render(
+      <NoteList
+        notes={[note("m", "Meeting")]}
+        activeId={asNoteId("m")}
+        onSelect={vi.fn()}
+        onCreate={vi.fn()}
+        onRename={onRename}
+      />,
+    )
+    fireEvent.click(screen.getByLabelText("Rename Meeting"))
+    fireEvent.keyDown(screen.getByLabelText("Rename Meeting"), { key: "Escape" })
+    expect(onRename).not.toHaveBeenCalled()
+    expect(screen.getByRole("button", { name: "Meeting" })).toBeTruthy() // back to the note button
   })
 
   it("offers create-in-folder on each folder with its full path, without toggling the folder", () => {
@@ -84,7 +106,7 @@ describe("NoteList — folder tree (v1b)", () => {
     expect(onCreateInFolder).toHaveBeenCalledWith("work")
   })
 
-  it("shows a move affordance only when onMove is provided (folder-capable vault)", () => {
+  it("moves via an inline input (Enter commits the folder), only when onMove is provided", () => {
     const onMove = vi.fn()
     const { rerender } = render(
       <NoteList
@@ -98,14 +120,18 @@ describe("NoteList — folder tree (v1b)", () => {
 
     rerender(
       <NoteList
-        notes={[note("a", "Home")]}
+        notes={[note("a", "Home", "old")]}
         activeId={asNoteId("a")}
         onSelect={vi.fn()}
         onCreate={vi.fn()}
         onMove={onMove}
       />,
     )
-    screen.getByLabelText("Move Home").click()
-    expect(onMove).toHaveBeenCalledWith(asNoteId("a"))
+    fireEvent.click(screen.getByLabelText("Move Home"))
+    const input = screen.getByLabelText("Move Home")
+    expect((input as HTMLInputElement).value).toBe("old") // seeded with the current folder
+    fireEvent.change(input, { target: { value: "archive/2026" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+    expect(onMove).toHaveBeenCalledWith(asNoteId("a"), "archive/2026")
   })
 })

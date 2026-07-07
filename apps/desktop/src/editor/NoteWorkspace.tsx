@@ -248,20 +248,14 @@ export function NoteWorkspace({
                 setAiStatus(null)
                 ws.remove(id)
               }}
-              onRename={(id) => {
-                const current = ws.notes.find((m) => m.id === id)?.title ?? ""
-                const next = window.prompt("Rename note", current)
-                if (next === null || next.trim() === "") return
+              onRename={(id, title) => {
                 clearDiff()
                 setAiStatus(null)
-                ws.rename(id, next)
+                ws.rename(id, title)
               }}
               {...(ws.canMove
                 ? {
-                    onMove: (id: NoteId) => {
-                      const current = ws.notes.find((m) => m.id === id)?.path ?? ""
-                      const folder = window.prompt("Move to folder (blank = root)", current)
-                      if (folder === null) return
+                    onMove: (id: NoteId, folder: string) => {
                       ws.move(id, folder)
                     },
                     onCreateInFolder: (folder: string) => {

@@ -225,26 +225,28 @@ describe("NoteWorkspace", () => {
     expect(document.querySelector(".cm-editor")).not.toBeNull()
   })
 
-  it("renames the active note from the list (prompt → relabel)", () => {
-    vi.spyOn(window, "prompt").mockReturnValue("Index")
+  it("renames the active note from the list (inline input → relabel)", () => {
+    // The rename affordance is an in-app inline input (Tauri's WKWebView can't show window.prompt).
     render(<NoteWorkspace auth={localAuth("editor")} />)
     const nav = screen.getByRole("navigation")
     expect(within(nav).getByRole("button", { name: "Home" })).toBeTruthy()
     fireEvent.click(within(nav).getByRole("button", { name: "Rename Home" }))
+    const input = within(nav).getByLabelText("Rename Home")
+    fireEvent.change(input, { target: { value: "Index" } })
+    fireEvent.keyDown(input, { key: "Enter" })
     expect(within(nav).getByRole("button", { name: "Index" })).toBeTruthy()
     expect(within(nav).queryByRole("button", { name: "Home" })).toBeNull()
   })
 
-  it("does not rename when the prompt is cancelled", () => {
-    vi.spyOn(window, "prompt").mockReturnValue(null)
+  it("does not rename when the inline editor is cancelled (Escape)", () => {
     render(<NoteWorkspace auth={localAuth("editor")} />)
     const nav = screen.getByRole("navigation")
     fireEvent.click(within(nav).getByRole("button", { name: "Rename Ideas" }))
+    fireEvent.keyDown(within(nav).getByLabelText("Rename Ideas"), { key: "Escape" })
     expect(within(nav).getByRole("button", { name: "Ideas" })).toBeTruthy()
   })
 
   it("disables rename for a viewer and blocks the action", () => {
-    vi.spyOn(window, "prompt").mockReturnValue("Hacked")
     render(<NoteWorkspace auth={localAuth("viewer")} />)
     const nav = screen.getByRole("navigation")
     const btn = within(nav).getByRole("button", { name: "Rename Ideas" }) as HTMLButtonElement
