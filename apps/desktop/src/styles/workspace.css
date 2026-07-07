@@ -172,6 +172,36 @@ nav > ul li > button:first-child {
   text-align: left;
 }
 
+/* Folder groups in the note tree (v1b): a quiet, collapsible heading with an indented body, so a
+ * hierarchical vault reads as a tree while the flat top-level list is untouched. Note rows inside a
+ * folder reuse the same flex layout as the root list. */
+.folder {
+  margin-left: var(--space-2);
+}
+.folder > summary {
+  padding: var(--space-1) var(--space-2);
+  font-size: 0.85em;
+  opacity: 0.75;
+  cursor: pointer;
+  list-style: none;
+}
+.folder > summary::before {
+  content: "▸ ";
+  display: inline-block;
+}
+.folder[open] > summary::before {
+  content: "▾ ";
+}
+.folder ul li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.folder ul li > button:first-child {
+  flex: 1;
+  text-align: left;
+}
+
 /* Buttons — quiet by default; the row/list buttons read as items, not chips. */
 button {
   padding: var(--space-1) var(--space-2);

@@ -390,7 +390,8 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
       .filter((m) => entries.get(m.id)?.deleted !== true)
       .map((m) => {
         const entry = entries.get(m.id)
-        return entry !== undefined ? { id: m.id, title: entry.title } : m
+        // Registry title (LWW) wins, but keep the vault's `path` so the sidebar tree survives sync.
+        return entry !== undefined ? { ...m, title: entry.title } : m
       })
   }, [vault, registry])
 
@@ -402,7 +403,8 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
       .filter((m) => entries.get(m.id)?.deleted === true)
       .map((m) => {
         const entry = entries.get(m.id)
-        return entry !== undefined ? { id: m.id, title: entry.title } : m
+        // Registry title (LWW) wins, but keep the vault's `path` so the sidebar tree survives sync.
+        return entry !== undefined ? { ...m, title: entry.title } : m
       })
   }, [vault, registry])
 

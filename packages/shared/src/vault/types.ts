@@ -3,6 +3,13 @@ import type { NoteId } from "../types"
 export interface NoteMeta {
   readonly id: NoteId
   readonly title: string
+  /**
+   * The note's folder — a "/"-joined, workspace-root-relative directory (e.g. `"work/projects"`),
+   * omitted for a top-level note and for vaults with no folder concept (memory/localStorage). Set by
+   * the file-backed vault so the UI can render the hierarchy; identity + links never depend on it (a
+   * note is addressed by `id`/`title`, so moving folders keeps every `[[wikilink]]` intact).
+   */
+  readonly path?: string
 }
 
 /**

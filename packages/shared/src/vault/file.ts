@@ -204,11 +204,18 @@ export function createFileBackedVault(options: FileVaultOptions): FileBackedVaul
     return entry
   }
 
+  /** The public metadata for a note, carrying its folder (`path`) so the UI can render the hierarchy;
+   * `path` is omitted for a top-level note (folders are display-only — identity is `id`/`title`). */
+  const metaOf = (id: NoteId, title: string, filename: string): NoteMeta => {
+    const dir = dirOf(filename)
+    return dir === "" ? { id, title } : { id, title, path: dir }
+  }
+
   /** Materialize a new note in the mirror (id/title into frontmatter). Caller persists the file. */
   const putNew = (id: NoteId, title: string, body: string): Entry => {
     const source = upsertFrontmatter(body, { id, title })
     const filename = reserveUnique(title)
-    const entry: Entry = { meta: { id, title }, source, filename }
+    const entry: Entry = { meta: metaOf(id, title, filename), source, filename }
     notes.set(id, entry)
     return entry
   }
@@ -253,7 +260,11 @@ export function createFileBackedVault(options: FileVaultOptions): FileBackedVaul
         typeof fm.title === "string" && fm.title !== ""
           ? fm.title // exact title from frontmatter (file-wins, O1)
           : stemOf(raw) // else the filename stem (Obsidian-style; basename at any folder depth)
-      notes.set(asNoteId(id), { meta: { id: asNoteId(id), title }, source: src, filename: raw })
+      notes.set(asNoteId(id), {
+        meta: metaOf(asNoteId(id), title, raw),
+        source: src,
+        filename: raw,
+      })
       usedNames.add(key)
     }
     for (const wb of writebacks) await fs.writeFile(wb.name, wb.content)
@@ -278,7 +289,7 @@ export function createFileBackedVault(options: FileVaultOptions): FileBackedVaul
         if (id === "" || notes.has(asNoteId(id))) continue // trashed files carry an id; skip dup/idless
         const title = typeof fm.title === "string" && fm.title !== "" ? fm.title : stemOf(raw)
         notes.set(asNoteId(id), {
-          meta: { id: asNoteId(id), title },
+          meta: metaOf(asNoteId(id), title, raw),
           source,
           filename: raw,
           trashed: true,
@@ -341,7 +352,7 @@ export function createFileBackedVault(options: FileVaultOptions): FileBackedVaul
       // Keep the note in its own folder — only the basename (title slug) changes (folders are for
       // human grouping, so a rename never relocates a note across the hierarchy).
       const filename = reserveUnique(title, dirOf(oldName))
-      notes.set(id, { meta: { id, title }, source, filename })
+      notes.set(id, { meta: metaOf(id, title, filename), source, filename })
       enqueue(async () => {
         if (filename !== oldName) await fs.rename(oldName, filename)
         await fs.writeFile(filename, source)

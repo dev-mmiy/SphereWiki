@@ -328,6 +328,10 @@ describe("file-backed vault — on-disk specifics", () => {
     const meeting = v.vault.list().find((m) => m.title === "Team Meeting")
     if (meeting === undefined) throw new Error("expected the subfolder note")
     expect(v.vault.read(meeting.id)).toContain("[[Ideas]]") // its wikilink is intact regardless of folder
+    // meta.path carries the note's folder (feeds the sidebar tree, v1b); root notes omit it.
+    expect(meeting.path).toBe("work")
+    expect(v.vault.list().find((m) => m.title === "Untitled")?.path).toBe("projects/deep")
+    expect(v.vault.list().find((m) => m.title === "Ideas")?.path).toBeUndefined() // root note
   })
 
   it("keeps a renamed note in its own folder (only the basename slug changes)", async () => {
