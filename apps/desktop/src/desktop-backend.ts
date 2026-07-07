@@ -1,12 +1,15 @@
 import { createLocalEmbedder, type EmbeddingProvider, type VectorIndex } from "@spherewiki/ai"
 import type { Vault, WorkspaceId } from "@spherewiki/shared"
 import { createTauriVectorIndex } from "./index/duckdb-vector"
+import { createDiskStorage, type SyncStorage } from "./state/disk-storage"
 import { createTauriVault, type Invoke } from "./vault/tauri-vault"
 
 export interface DesktopBackend {
   readonly vault: Vault
   readonly index: VectorIndex
   readonly embedder: EmbeddingProvider
+  /** Disk-backed durable state (version history, prefs, metrics) in `.spherewiki/` — travels with the vault. */
+  readonly storage: SyncStorage
   /** Flush all pending disk write-throughs (App calls this on window hide / before unload). */
   flush(): Promise<void>
 }
@@ -24,16 +27,21 @@ export async function createDesktopBackend(
 ): Promise<DesktopBackend> {
   const bridge = invoke ?? (await import("@tauri-apps/api/core")).invoke
   const embedder = createLocalEmbedder()
-  const [vaultHandle, indexHandle] = await Promise.all([
+  const [vaultHandle, indexHandle, diskStorage] = await Promise.all([
     createTauriVault(workspace, seed, bridge, {
       onWriteError: (error) => console.error("[tauri] a note failed to save to disk", error),
     }),
     createTauriVectorIndex(workspace, embedder.info, bridge),
+    createDiskStorage(workspace, bridge),
   ])
   return {
     vault: vaultHandle.vault,
     index: indexHandle.index,
     embedder,
-    flush: () => Promise.all([vaultHandle.flush(), indexHandle.flush()]).then(() => undefined),
+    storage: diskStorage.storage,
+    flush: () =>
+      Promise.all([vaultHandle.flush(), indexHandle.flush(), diskStorage.flush()]).then(
+        () => undefined,
+      ),
   }
 }

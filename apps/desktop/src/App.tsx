@@ -50,7 +50,12 @@ export function App() {
   return (
     <NoteWorkspace
       {...(backend
-        ? { vault: backend.vault, index: backend.index, embedder: backend.embedder }
+        ? {
+            vault: backend.vault,
+            index: backend.index,
+            embedder: backend.embedder,
+            storage: backend.storage,
+          }
         : {})}
     />
   )

@@ -1,4 +1,5 @@
 mod duckdb_conformance;
+mod state;
 mod vault;
 mod vector;
 
@@ -37,7 +38,9 @@ pub fn run() {
       vector::vector_records,
       vector::vector_upsert,
       vector::vector_remove,
-      vector::vector_clear
+      vector::vector_clear,
+      state::state_load,
+      state::state_save
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

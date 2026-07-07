@@ -13,6 +13,7 @@ import { appTitle } from "../app-info"
 import { localAuth, WORKSPACE_ID } from "../auth-local"
 import { createAiMetricsRecorder } from "../metrics/ai-metrics"
 import { createGraphBaselineRecorder, graphSnapshot } from "../metrics/graph-growth"
+import type { SyncStorage } from "../state/disk-storage"
 import { connectRegistryToServer } from "../sync/connect-registry"
 import { connectLocalPersistence } from "../sync/local-persistence"
 import { connectRegistryPersistence } from "../sync/registry-persistence"
@@ -62,19 +63,26 @@ export function NoteWorkspace({
   vault,
   index,
   embedder,
+  storage,
 }: {
   auth?: AuthProvider
   /** The on-disk backend under the native shell (App awaits its hydration first); web omits these. */
   vault?: Vault
   index?: VectorIndex
   embedder?: EmbeddingProvider
+  /** Durable-state store: the on-disk `.spherewiki/` sidecar under Tauri, else webview localStorage. */
+  storage?: SyncStorage
 }) {
-  // Kept-vs-reverted counters persist (localStorage) so they accumulate across sessions. Keyed by
-  // the local-mode WORKSPACE_ID today; when real multi-workspace switching lands, derive this key
-  // from the same workspaceId the hook uses so per-workspace metrics never share a bucket.
+  // Under the native shell all NON-derived durable state (version history, session prefs, AI metrics,
+  // graph baseline) goes through the on-disk `.spherewiki/` sidecar so it travels with the vault
+  // folder; in the browser it stays in webview localStorage.
+  const durable = storage ?? window.localStorage
+  // Kept-vs-reverted counters persist so they accumulate across sessions. Keyed by the local-mode
+  // WORKSPACE_ID today; when real multi-workspace switching lands, derive this key from the same
+  // workspaceId the hook uses so per-workspace metrics never share a bucket.
   const [aiMetricsRecorder] = useState(() =>
     createAiMetricsRecorder({
-      storage: window.localStorage,
+      storage: durable,
       key: `spherewiki:aimetrics:${WORKSPACE_ID}`,
     }),
   )
@@ -82,7 +90,7 @@ export function NoteWorkspace({
   // hydration), persisted so the metrics panel shows growth since the workspace was first opened.
   const [graphBaseline] = useState(() =>
     createGraphBaselineRecorder({
-      storage: window.localStorage,
+      storage: durable,
       key: `spherewiki:graphbaseline:${WORKSPACE_ID}`,
     }),
   )
@@ -92,6 +100,7 @@ export function NoteWorkspace({
     ...(vault !== undefined ? { vault } : {}),
     ...(index !== undefined ? { index } : {}),
     ...(embedder !== undefined ? { embedder } : {}),
+    ...(storage !== undefined ? { vaultStorage: storage } : {}),
     syncUrl: import.meta.env.VITE_SYNC_URL,
     syncToken: import.meta.env.VITE_SYNC_TOKEN,
     persistVaultKey: `spherewiki:vault:${WORKSPACE_ID}`,
