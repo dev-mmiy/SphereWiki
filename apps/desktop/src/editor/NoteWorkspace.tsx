@@ -261,12 +261,16 @@ export function NoteWorkspace({
                     onMove: (id: NoteId, folder: string) => {
                       ws.move(id, folder)
                     },
-                    onCreateInFolder: (folder: string) => {
+                    onCreateSubnote: () => {
+                      // Create a child UNDER the active note: its children folder is
+                      // `<path>/<name>` (the folder-note convention), so the active note becomes a
+                      // folder-parent. A title free of BOTH visible and trashed notes so this always
+                      // CREATES (never resolves-by-title to, or restores, an existing note).
+                      const active = ws.notes.find((m) => m.id === ws.activeId)
+                      if (active?.name === undefined) return // needs the on-disk stem (file vault)
+                      const folder = active.path ? `${active.path}/${active.name}` : active.name
                       clearDiff()
                       setAiStatus(null)
-                      // A title free of BOTH visible and trashed notes, so this always CREATES a new
-                      // note in `folder` — never resolves-by-title to an existing note in another
-                      // folder NOR restores a trashed note (which would resurrect it at the old spot).
                       ws.create(
                         freshNoteTitle([...ws.notes, ...ws.deleted].map((m) => m.title)),
                         folder,

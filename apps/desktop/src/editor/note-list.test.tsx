@@ -61,7 +61,6 @@ describe("NoteList — folder tree (v1b)", () => {
   })
 
   it("merges a note with its same-named child folder into one expandable node (folder-note)", () => {
-    const onCreateInFolder = vi.fn()
     render(
       <NoteList
         notes={[
@@ -71,7 +70,6 @@ describe("NoteList — folder tree (v1b)", () => {
         activeId={asNoteId("p")}
         onSelect={vi.fn()}
         onCreate={vi.fn()}
-        onCreateInFolder={onCreateInFolder}
       />,
     )
     // "Project" is ONE node: a clickable note button that ALSO expands to show its child "Task".
@@ -79,25 +77,33 @@ describe("NoteList — folder tree (v1b)", () => {
     const details = projectBtn.closest("details") as HTMLElement
     expect(details).toBeTruthy() // it's expandable (has a child)
     expect(within(details).getByRole("button", { name: "Task" })).toBeTruthy() // Task nested under it
-    // The ＋ on Project creates a CHILD — in Project's own folder ("Project/").
-    screen.getByLabelText("New note in Project").click()
-    expect(onCreateInFolder).toHaveBeenCalledWith("Project")
   })
 
-  it("a childless note is a plain leaf; its ＋ makes a child in the note's own folder", () => {
-    const onCreateInFolder = vi.fn()
-    render(
+  it("offers a top 'New subnote' button (only with folder support) that fires onCreateSubnote", () => {
+    const onCreateSubnote = vi.fn()
+    const { rerender } = render(
       <NoteList
-        notes={[note("n", "Note 5", "sub", "Note 5")]} // sub/Note 5.md, no children yet
-        activeId={asNoteId("n")}
+        notes={[note("a", "Home")]}
+        activeId={asNoteId("a")}
         onSelect={vi.fn()}
         onCreate={vi.fn()}
-        onCreateInFolder={onCreateInFolder}
       />,
     )
-    // Selecting Note 5's ＋ creates a child at "sub/Note 5/" (its children folder).
-    screen.getByLabelText("New note in Note 5").click()
-    expect(onCreateInFolder).toHaveBeenCalledWith("sub/Note 5")
+    expect(screen.queryByRole("button", { name: "New subnote" })).toBeNull() // no folders -> no subnote
+
+    rerender(
+      <NoteList
+        notes={[note("a", "Home")]}
+        activeId={asNoteId("a")}
+        onSelect={vi.fn()}
+        onCreate={vi.fn()}
+        onCreateSubnote={onCreateSubnote}
+      />,
+    )
+    // Both creation buttons live at the top; no per-note ＋ clutters the tree.
+    expect(screen.queryByLabelText(/^New note in /)).toBeNull()
+    screen.getByRole("button", { name: "New subnote" }).click()
+    expect(onCreateSubnote).toHaveBeenCalled()
   })
 
   it("renames via an inline input (Enter commits the typed title) — works without window.prompt", () => {
@@ -136,24 +142,6 @@ describe("NoteList — folder tree (v1b)", () => {
     fireEvent.keyDown(screen.getByLabelText("Rename Meeting"), { key: "Escape" })
     expect(onRename).not.toHaveBeenCalled()
     expect(screen.getByRole("button", { name: "Meeting" })).toBeTruthy() // back to the note button
-  })
-
-  it("offers create-in-folder on each folder with its full path, without toggling the folder", () => {
-    const onCreateInFolder = vi.fn()
-    render(
-      <NoteList
-        notes={[note("d", "Deep", "work/projects")]}
-        activeId={asNoteId("d")}
-        onSelect={vi.fn()}
-        onCreate={vi.fn()}
-        onCreateInFolder={onCreateInFolder}
-      />,
-    )
-    // The nested folder's + passes the FULL path so the note is minted at the right depth.
-    screen.getByLabelText("New note in projects").click()
-    expect(onCreateInFolder).toHaveBeenCalledWith("work/projects")
-    screen.getByLabelText("New note in work").click()
-    expect(onCreateInFolder).toHaveBeenCalledWith("work")
   })
 
   it("moves via an inline input (Enter commits the folder), only when onMove is provided", () => {

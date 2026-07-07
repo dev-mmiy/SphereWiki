@@ -161,6 +161,15 @@
   gap: 2px;
 }
 
+/* The two top-level creation buttons: "New subnote" (child of the active note) then "New note". */
+.new-buttons {
+  display: flex;
+  gap: var(--space-1);
+}
+.new-buttons > button {
+  flex: 1;
+}
+
 /* Note list (sidebar) — an OUTLINER tree: every note is a node; a note with children (folder-note
  * convention) is an expandable <details>, a childless note a leaf row. Each node indents one level. */
 .node {

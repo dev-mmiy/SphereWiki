@@ -50,13 +50,14 @@ export function NoteList({
   onDelete,
   onRename,
   onMove,
-  onCreateInFolder,
+  onCreateSubnote,
   onRestore,
   canEdit = true,
 }: {
   notes: readonly NoteMeta[]
   activeId: NoteId
   onSelect: (id: NoteId) => void
+  /** Create a new top-level note. */
   onCreate: () => void
   canCreate?: boolean
   /** Tombstoned notes still recoverable (the "trash"). */
@@ -67,8 +68,8 @@ export function NoteList({
   onRename?: (id: NoteId, title: string) => void
   /** Move a note into `folder` (`""` = root). Omitted when the vault has no folder concept (web). */
   onMove?: (id: NoteId, folder: string) => void
-  /** Create a note inside a node's folder (a child of that note / folder). Omitted without folders. */
-  onCreateInFolder?: (folder: string) => void
+  /** Create a child note UNDER the currently-active note (making it a folder). Omitted without folders. */
+  onCreateSubnote?: () => void
   /** Restore a soft-deleted note. */
   onRestore?: (id: NoteId) => void
   canEdit?: boolean
@@ -130,19 +131,6 @@ export function NoteList({
           </button>
         ) : (
           <span className="folder-label">📁 {node.name}</span>
-        )}
-        {onCreateInFolder && (
-          <button
-            type="button"
-            aria-label={`New note in ${m?.title ?? node.name}`}
-            disabled={!canCreate}
-            onClick={(e) => {
-              e.preventDefault()
-              onCreateInFolder(node.path)
-            }}
-          >
-            ＋
-          </button>
         )}
         {m !== undefined && onRename && (
           <button
@@ -208,9 +196,18 @@ export function NoteList({
 
   return (
     <nav>
-      <button type="button" onClick={onCreate} disabled={!canCreate}>
-        New note
-      </button>
+      {/* Creation is top-level: "New subnote" (left) adds a child under the ACTIVE note (making it a
+          folder); "New note" (right) adds a new top-level note. No per-note ＋ clutters the tree. */}
+      <div className="new-buttons">
+        {onCreateSubnote && (
+          <button type="button" onClick={onCreateSubnote} disabled={!canCreate}>
+            New subnote
+          </button>
+        )}
+        <button type="button" onClick={onCreate} disabled={!canCreate}>
+          New note
+        </button>
+      </div>
       {[...buildTree(notes).children.values()]
         .sort((a, b) => (a.name < b.name ? -1 : 1))
         .map(renderNode)}
