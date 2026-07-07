@@ -161,45 +161,41 @@
   gap: 2px;
 }
 
-/* Note list (sidebar nav) */
-nav > ul li {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-}
-nav > ul li > button:first-child {
-  flex: 1;
-  text-align: left;
-}
-
-/* Folder groups in the note tree (v1b): a quiet, collapsible heading with an indented body, so a
- * hierarchical vault reads as a tree while the flat top-level list is untouched. Note rows inside a
- * folder reuse the same flex layout as the root list. */
-.folder {
+/* Note list (sidebar) — an OUTLINER tree: every note is a node; a note with children (folder-note
+ * convention) is an expandable <details>, a childless note a leaf row. Each node indents one level. */
+.node {
   margin-left: var(--space-2);
 }
-.folder > summary {
-  padding: var(--space-1) var(--space-2);
-  font-size: 0.85em;
-  opacity: 0.75;
-  cursor: pointer;
-  list-style: none;
+/* A folder-only node (no note of its own) reads quieter than a real note. */
+.folder-label {
+  opacity: 0.7;
 }
-.folder > summary::before {
-  content: "▸ ";
-  display: inline-block;
-}
-.folder[open] > summary::before {
-  content: "▾ ";
-}
-.folder ul li {
-  display: flex;
+/* The row inside a node: [note button | folder label] fills, action buttons (＋ ✎ 🗀 ✕) trail it. */
+.node-row {
+  display: inline-flex;
   align-items: center;
   gap: var(--space-1);
+  width: calc(100% - var(--space-3));
 }
-.folder ul li > button:first-child {
+.node-row > button:first-child,
+.node-row > .folder-label {
   flex: 1;
   text-align: left;
+}
+/* Expandable nodes: a caret marks the fold state; the summary holds the interactive row inline. */
+.node > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+}
+.node > summary::before {
+  content: "▸ ";
+  display: inline-block;
+  opacity: 0.6;
+}
+.node[open] > summary::before {
+  content: "▾ ";
 }
 
 /* Buttons — quiet by default; the row/list buttons read as items, not chips. */

@@ -243,7 +243,9 @@ export function NoteWorkspace({
                 setAiStatus(null)
                 ws.select(id)
               }}
-              onCreate={() => ws.create(freshNoteTitle(ws.notes.map((m) => m.title)))}
+              onCreate={() =>
+                ws.create(freshNoteTitle([...ws.notes, ...ws.deleted].map((m) => m.title)))
+              }
               onDelete={(id) => {
                 clearDiff()
                 setAiStatus(null)
@@ -262,9 +264,13 @@ export function NoteWorkspace({
                     onCreateInFolder: (folder: string) => {
                       clearDiff()
                       setAiStatus(null)
-                      // A guaranteed-unique title so this always CREATES a new note in `folder` —
-                      // never resolves-by-title to an existing note in a different folder.
-                      ws.create(freshNoteTitle(ws.notes.map((m) => m.title)), folder)
+                      // A title free of BOTH visible and trashed notes, so this always CREATES a new
+                      // note in `folder` — never resolves-by-title to an existing note in another
+                      // folder NOR restores a trashed note (which would resurrect it at the old spot).
+                      ws.create(
+                        freshNoteTitle([...ws.notes, ...ws.deleted].map((m) => m.title)),
+                        folder,
+                      )
                     },
                   }
                 : {})}

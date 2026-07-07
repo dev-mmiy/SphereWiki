@@ -5,8 +5,12 @@ import { NoteList } from "./note-list"
 
 afterEach(cleanup)
 
-const note = (id: string, title: string, path?: string): NoteMeta =>
-  path === undefined ? { id: asNoteId(id), title } : { id: asNoteId(id), title, path }
+const note = (id: string, title: string, path?: string, name?: string): NoteMeta => ({
+  id: asNoteId(id),
+  title,
+  ...(path !== undefined ? { path } : {}),
+  ...(name !== undefined ? { name } : {}),
+})
 
 describe("NoteList — folder tree (v1b)", () => {
   it("keeps pathless notes flat and never renders a folder group", () => {
@@ -38,8 +42,8 @@ describe("NoteList — folder tree (v1b)", () => {
       />,
     )
     // "work" and the nested "projects" both render as folder groups.
-    const work = screen.getByLabelText("Folder work")
-    const projects = screen.getByLabelText("Folder projects")
+    const work = screen.getByText("📁 work")
+    const projects = screen.getByText("📁 projects")
     expect(work).toBeTruthy()
     expect(projects).toBeTruthy()
 
@@ -54,6 +58,46 @@ describe("NoteList — folder tree (v1b)", () => {
     const nav = screen.getByRole("navigation")
     const homeButton = within(nav).getByRole("button", { name: "Home" })
     expect(homeButton.compareDocumentPosition(work) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it("merges a note with its same-named child folder into one expandable node (folder-note)", () => {
+    const onCreateInFolder = vi.fn()
+    render(
+      <NoteList
+        notes={[
+          note("p", "Project", undefined, "Project"), // Project.md at root
+          note("c", "Task", "Project", "Task"), // Project/Task.md — a CHILD of Project
+        ]}
+        activeId={asNoteId("p")}
+        onSelect={vi.fn()}
+        onCreate={vi.fn()}
+        onCreateInFolder={onCreateInFolder}
+      />,
+    )
+    // "Project" is ONE node: a clickable note button that ALSO expands to show its child "Task".
+    const projectBtn = screen.getByRole("button", { name: "Project" })
+    const details = projectBtn.closest("details") as HTMLElement
+    expect(details).toBeTruthy() // it's expandable (has a child)
+    expect(within(details).getByRole("button", { name: "Task" })).toBeTruthy() // Task nested under it
+    // The ＋ on Project creates a CHILD — in Project's own folder ("Project/").
+    screen.getByLabelText("New note in Project").click()
+    expect(onCreateInFolder).toHaveBeenCalledWith("Project")
+  })
+
+  it("a childless note is a plain leaf; its ＋ makes a child in the note's own folder", () => {
+    const onCreateInFolder = vi.fn()
+    render(
+      <NoteList
+        notes={[note("n", "Note 5", "sub", "Note 5")]} // sub/Note 5.md, no children yet
+        activeId={asNoteId("n")}
+        onSelect={vi.fn()}
+        onCreate={vi.fn()}
+        onCreateInFolder={onCreateInFolder}
+      />,
+    )
+    // Selecting Note 5's ＋ creates a child at "sub/Note 5/" (its children folder).
+    screen.getByLabelText("New note in Note 5").click()
+    expect(onCreateInFolder).toHaveBeenCalledWith("sub/Note 5")
   })
 
   it("renames via an inline input (Enter commits the typed title) — works without window.prompt", () => {

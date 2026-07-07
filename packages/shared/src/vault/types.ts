@@ -10,6 +10,13 @@ export interface NoteMeta {
    * note is addressed by `id`/`title`, so moving folders keeps every `[[wikilink]]` intact).
    */
   readonly path?: string
+  /**
+   * The note's filename stem (basename without `.md`), e.g. `"Note 5"`. A note's CHILDREN live in a
+   * sibling folder named by this stem (`<path>/<name>/`) — the folder-note convention — so the tree
+   * matches a child's path segment to its parent note by `name`, not by the (possibly-differing)
+   * title. Set by the file-backed vault; omitted where there is no on-disk filename.
+   */
+  readonly name?: string
 }
 
 /**

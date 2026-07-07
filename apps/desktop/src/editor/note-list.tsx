@@ -1,28 +1,41 @@
 import type { NoteId, NoteMeta } from "@spherewiki/shared"
 import { type ReactNode, useState } from "react"
 
-/** A folder in the sidebar tree: its own notes plus nested subfolders (keyed by segment name). */
-interface FolderNode {
-  readonly notes: NoteMeta[]
-  readonly folders: Map<string, FolderNode>
+/**
+ * A node in the outliner tree. Notes nest under notes via the folder-note convention: a note
+ * `<path>/<name>.md` holds its children in `<path>/<name>/`, so a child's `path` ends with its
+ * parent's `name`. Each node therefore has an OPTIONAL `note` (present when a `.md` sits exactly
+ * here) plus `children` (nested nodes). `path` is the node's full "/"-joined path — the folder a new
+ * child of this node is created in. A node with children but no `note` is a plain folder container.
+ */
+interface TreeNode {
+  readonly name: string
+  readonly path: string
+  note?: NoteMeta
+  readonly children: Map<string, TreeNode>
 }
 
-/** Group a flat note list into a folder tree by each note's `path` (a note with no path is at root).
- * Folders are display-only — a note's identity/links never depend on where it sits (v1b). */
-function buildTree(notes: readonly NoteMeta[]): FolderNode {
-  const root: FolderNode = { notes: [], folders: new Map() }
+/** Build the outliner tree: each note attaches to the node at `[...path segments, name]`, so a note
+ * and its same-named child folder merge into one expandable node. Segments are NFC-normalized so a
+ * child's path segment matches its parent note's stem even across macOS NFD/NFC. */
+function buildTree(notes: readonly NoteMeta[]): TreeNode {
+  const root: TreeNode = { name: "", path: "", children: new Map() }
   for (const m of notes) {
-    const segments = (m.path ?? "").split("/").filter((s) => s !== "")
+    const segments = [...(m.path ?? "").split("/").filter((s) => s !== ""), m.name ?? m.title].map(
+      (s) => s.normalize("NFC"),
+    )
     let node = root
-    for (const segment of segments) {
-      let child = node.folders.get(segment)
+    let path = ""
+    for (const seg of segments) {
+      path = path === "" ? seg : `${path}/${seg}`
+      let child = node.children.get(seg)
       if (child === undefined) {
-        child = { notes: [], folders: new Map() }
-        node.folders.set(segment, child)
+        child = { name: seg, path, children: new Map() }
+        node.children.set(seg, child)
       }
       node = child
     }
-    node.notes.push(m)
+    node.note = m
   }
   return root
 }
@@ -54,15 +67,14 @@ export function NoteList({
   onRename?: (id: NoteId, title: string) => void
   /** Move a note into `folder` (`""` = root). Omitted when the vault has no folder concept (web). */
   onMove?: (id: NoteId, folder: string) => void
-  /** Create a note directly inside a folder (its "/"-joined path). Omitted without folder support. */
+  /** Create a note inside a node's folder (a child of that note / folder). Omitted without folders. */
   onCreateInFolder?: (folder: string) => void
   /** Restore a soft-deleted note. */
   onRestore?: (id: NoteId) => void
   canEdit?: boolean
 }) {
-  // Inline editor for rename / move. A modal `window.prompt` is NOT usable — Tauri's WKWebView has no
-  // prompt panel (it silently returns null), so an in-app text input is the only portable affordance
-  // (it also works in the browser build). `kind` picks whether Enter commits a title or a folder.
+  // Inline editor for rename / move — Tauri's WKWebView has no window.prompt (it returns null), so an
+  // in-app text input is the only portable affordance (also nicer in the browser build).
   const [editing, setEditing] = useState<{
     id: NoteId
     kind: "rename" | "move"
@@ -80,110 +92,128 @@ export function NoteList({
     setEditing(null)
   }
 
-  const renderNote = (m: NoteMeta): ReactNode => {
-    if (editing?.id === m.id) {
+  // The interactive content of a node's row: the inline editor when this note is being edited, else
+  // the note button (or a folder label) plus its actions. `＋` creates a CHILD in this node's folder;
+  // preventDefault on every button so clicking one inside a <summary> never toggles the <details>.
+  const renderRow = (node: TreeNode): ReactNode => {
+    const m = node.note
+    if (m !== undefined && editing?.id === m.id) {
       const isRename = editing.kind === "rename"
       return (
-        <li key={m.id}>
-          <input
-            // biome-ignore lint/a11y/noAutofocus: an inline editor opened by an explicit click (never on page load) should take focus so the user can type at once.
-            autoFocus
-            aria-label={`${isRename ? "Rename" : "Move"} ${m.title}`}
-            placeholder={isRename ? "New title" : "Folder (blank = root)"}
-            value={editing.value}
-            onChange={(e) => setEditing({ ...editing, value: e.target.value })}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") commitEdit()
-              else if (e.key === "Escape") setEditing(null)
-            }}
-            onBlur={() => setEditing(null)} // click away = cancel (Enter commits)
-          />
-        </li>
+        <input
+          // biome-ignore lint/a11y/noAutofocus: an inline editor opened by an explicit click (never on page load) should take focus so the user can type at once.
+          autoFocus
+          aria-label={`${isRename ? "Rename" : "Move"} ${m.title}`}
+          placeholder={isRename ? "New title" : "Folder (blank = root)"}
+          value={editing.value}
+          onChange={(e) => setEditing({ ...editing, value: e.target.value })}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commitEdit()
+            else if (e.key === "Escape") setEditing(null)
+          }}
+          onBlur={() => setEditing(null)}
+        />
       )
     }
     return (
-      <li key={m.id}>
-        <button type="button" aria-current={m.id === activeId} onClick={() => onSelect(m.id)}>
-          {m.title}
-        </button>
-        {onRename && (
+      <span className="node-row">
+        {m !== undefined ? (
+          <button
+            type="button"
+            aria-current={m.id === activeId}
+            onClick={(e) => {
+              e.preventDefault()
+              onSelect(m.id)
+            }}
+          >
+            {m.title}
+          </button>
+        ) : (
+          <span className="folder-label">📁 {node.name}</span>
+        )}
+        {onCreateInFolder && (
+          <button
+            type="button"
+            aria-label={`New note in ${m?.title ?? node.name}`}
+            disabled={!canCreate}
+            onClick={(e) => {
+              e.preventDefault()
+              onCreateInFolder(node.path)
+            }}
+          >
+            ＋
+          </button>
+        )}
+        {m !== undefined && onRename && (
           <button
             type="button"
             aria-label={`Rename ${m.title}`}
             disabled={!canEdit}
-            onClick={() => setEditing({ id: m.id, kind: "rename", value: m.title })}
+            onClick={(e) => {
+              e.preventDefault()
+              setEditing({ id: m.id, kind: "rename", value: m.title })
+            }}
           >
             ✎
           </button>
         )}
-        {onMove && (
+        {m !== undefined && onMove && (
           <button
             type="button"
             aria-label={`Move ${m.title}`}
             disabled={!canEdit}
-            onClick={() => setEditing({ id: m.id, kind: "move", value: m.path ?? "" })}
+            onClick={(e) => {
+              e.preventDefault()
+              setEditing({ id: m.id, kind: "move", value: m.path ?? "" })
+            }}
           >
             🗀
           </button>
         )}
-        {onDelete && (
+        {m !== undefined && onDelete && (
           <button
             type="button"
             aria-label={`Delete ${m.title}`}
             disabled={!canEdit}
-            onClick={() => onDelete(m.id)}
+            onClick={(e) => {
+              e.preventDefault()
+              onDelete(m.id)
+            }}
           >
             ✕
           </button>
         )}
-      </li>
+      </span>
     )
   }
 
-  // Render a folder node: its own notes first, then its subfolders (alphabetical) as collapsible
-  // groups below them. Notes-first keeps the level's plain notes at the top and groups folders under
-  // them (display-only — a note's real location is its `path`, never its position here). Native
-  // <details> is keyboard-accessible and needs no React state. `folderPath` is the node's "/"-joined
-  // path ("" at the root), used for the key and create-in-folder.
-  const renderNode = (node: FolderNode, folderPath: string): ReactNode => (
-    <>
-      {node.notes.length > 0 && <ul>{node.notes.map(renderNote)}</ul>}
-      {[...node.folders.entries()]
-        .sort(([a], [b]) => (a.normalize("NFC") < b.normalize("NFC") ? -1 : 1))
-        .map(([name, child]) => {
-          const childPath = folderPath === "" ? name : `${folderPath}/${name}`
-          return (
-            <details key={childPath} open className="folder">
-              <summary aria-label={`Folder ${name}`}>
-                {name}
-                {onCreateInFolder && (
-                  <button
-                    type="button"
-                    aria-label={`New note in ${name}`}
-                    disabled={!canCreate}
-                    // preventDefault so clicking + doesn't also toggle the <details> open/closed.
-                    onClick={(e) => {
-                      e.preventDefault()
-                      onCreateInFolder(childPath)
-                    }}
-                  >
-                    ＋
-                  </button>
-                )}
-              </summary>
-              {renderNode(child, childPath)}
-            </details>
-          )
-        })}
-    </>
-  )
+  // A node with children is an expandable <details> (native, keyboard-accessible); a childless note
+  // is a leaf row. Children are rendered in NFC name order.
+  const renderNode = (node: TreeNode): ReactNode => {
+    const children = [...node.children.values()].sort((a, b) => (a.name < b.name ? -1 : 1))
+    if (children.length > 0) {
+      return (
+        <details key={node.path} open className="node">
+          <summary>{renderRow(node)}</summary>
+          {children.map(renderNode)}
+        </details>
+      )
+    }
+    return (
+      <div key={node.path} className="node node-leaf">
+        {renderRow(node)}
+      </div>
+    )
+  }
 
   return (
     <nav>
       <button type="button" onClick={onCreate} disabled={!canCreate}>
         New note
       </button>
-      {renderNode(buildTree(notes), "")}
+      {[...buildTree(notes).children.values()]
+        .sort((a, b) => (a.name < b.name ? -1 : 1))
+        .map(renderNode)}
       {deleted.length > 0 && (
         <details className="trash">
           <summary>Trash ({deleted.length})</summary>

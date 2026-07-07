@@ -395,6 +395,107 @@ describe("file-backed vault — on-disk specifics", () => {
     expect(vault.list().find((m) => m.id === note.id)?.path).toBe("work/todo")
   })
 
+  it("exposes each note's filename stem as meta.name (feeds the folder-note child tree)", async () => {
+    const store = new Map<string, string>([
+      ["/w/work/Task.md", "---\nid: t1\ntitle: My Task\n---\n# T\n"],
+    ])
+    const { vault, whenLoaded } = createFileBackedVault({ fs: fakeFs(store) })
+    await whenLoaded
+    const [only] = vault.list()
+    expect(only?.name).toBe("Task") // the basename stem, not the title
+    expect(only?.path).toBe("work")
+  })
+
+  it("carries a note's children when it is RENAMED (the <stem>/ subtree follows the new stem)", async () => {
+    const store = new Map<string, string>()
+    const { vault, whenLoaded, flush } = createFileBackedVault({
+      fs: fakeFs(store),
+      newId: ids("id"),
+    })
+    await whenLoaded
+    const parent = vault.create("Project", "# Project\n") // Project.md at root
+    const child = vault.create("Task", "# Task\n")
+    vault.move?.(child.id, "Project") // a child in the parent's stem-folder: Project/Task.md
+    await flush()
+    expect(store.has("/w/Project/Task.md")).toBe(true)
+
+    vault.rename(parent.id, "Roadmap") // rename the parent -> its children folder must follow
+    await flush()
+    expect(store.has("/w/Roadmap.md")).toBe(true) // parent renamed
+    expect(store.has("/w/Project/Task.md")).toBe(false) // old children folder gone (not orphaned)
+    expect(store.has("/w/Roadmap/Task.md")).toBe(true) // child carried to the new stem folder
+    expect(vault.list().find((m) => m.id === child.id)?.path).toBe("Roadmap") // mirror path updated
+  })
+
+  it("relocating children never OVERWRITES an unrelated note at the destination (collision → suffix)", async () => {
+    const store = new Map<string, string>()
+    const { vault, whenLoaded, flush } = createFileBackedVault({
+      fs: fakeFs(store),
+      newId: ids("id"),
+    })
+    await whenLoaded
+    const a = vault.create("Bar", "# Bar\n") // Bar.md
+    const child = vault.create("todo", "# child\n")
+    vault.move?.(child.id, "Bar") // Bar/todo.md (a child of Bar)
+    const e = vault.create("todo", "# unrelated E\n") // todo.md at root
+    vault.move?.(e.id, "Foo/Bar") // Foo/Bar/todo.md — an orphan folder (there is NO Foo/Bar.md)
+    await flush()
+
+    vault.move?.(a.id, "Foo") // Bar -> Foo/Bar.md; its child relocates into Foo/Bar/ (where E already is)
+    await flush()
+
+    // E must survive — the child is collision-suffixed, never clobbering the unrelated note.
+    expect(
+      vault
+        .list()
+        .map((m) => m.id)
+        .sort(),
+    ).toEqual([a.id, child.id, e.id].sort())
+    expect(store.get("/w/Foo/Bar/todo.md")).toContain("unrelated E") // E intact at its path
+    expect(store.get("/w/Foo/Bar/todo 2.md")).toContain("child") // child moved beside it, suffixed
+    const reload = createFileBackedVault({ fs: fakeFs(store), newId: ids("z") })
+    await reload.whenLoaded
+    expect(reload.vault.list()).toHaveLength(3) // no note lost across a reload
+  })
+
+  it("refuses to move a note into its OWN subtree (no self-nesting)", async () => {
+    const store = new Map<string, string>()
+    const { vault, whenLoaded, flush } = createFileBackedVault({
+      fs: fakeFs(store),
+      newId: ids("id"),
+    })
+    await whenLoaded
+    const a = vault.create("A", "# A\n")
+    const child = vault.create("B", "# B\n")
+    vault.move?.(child.id, "A") // A/B.md
+    await flush()
+    vault.move?.(a.id, "A") // into its own children folder — no-op
+    vault.move?.(a.id, "A/B") // deeper into its own subtree — no-op
+    await flush()
+    expect(store.has("/w/A.md")).toBe(true) // A stayed at the root
+    expect(store.has("/w/A/B.md")).toBe(true) // its child is untouched
+    expect(vault.list().find((m) => m.id === a.id)?.path).toBeUndefined()
+  })
+
+  it("carries a note's children when it is MOVED (the subtree moves with the parent)", async () => {
+    const store = new Map<string, string>()
+    const { vault, whenLoaded, flush } = createFileBackedVault({
+      fs: fakeFs(store),
+      newId: ids("id"),
+    })
+    await whenLoaded
+    const parent = vault.create("Parent", "# P\n")
+    const child = vault.create("Child", "# C\n")
+    vault.move?.(child.id, "Parent") // Parent/Child.md
+    await flush()
+    vault.move?.(parent.id, "archive") // archive/Parent.md; children -> archive/Parent/
+    await flush()
+    expect(store.has("/w/archive/Parent.md")).toBe(true)
+    expect(store.has("/w/archive/Parent/Child.md")).toBe(true) // subtree moved with the parent
+    expect(store.has("/w/Parent/Child.md")).toBe(false)
+    expect(vault.list().find((m) => m.id === child.id)?.path).toBe("archive/Parent")
+  })
+
   it("preserves an edit that raced a move — no lost edit, no duplicate at the old path", async () => {
     const store = new Map<string, string>()
     const { vault, whenLoaded, flush } = createFileBackedVault({

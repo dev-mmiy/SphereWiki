@@ -198,9 +198,9 @@ export function createFileBackedVault(options: FileVaultOptions): FileBackedVaul
       .normalize("NFC")
       .slice(0, -MD.length)
 
-  /** Reserve a unique root-relative filename for `title` within directory `dir` ("" = vault root). */
-  const reserveUnique = (title: string, dir = ""): string => {
-    const stem = vaultSlug(title)
+  /** Reserve a unique root-relative `<dir>/<stem>.md`, suffixing ` N` on a case-insensitive clash so a
+   * new file never overwrites one already in use. `dir` "" = vault root. */
+  const reserveUniqueStem = (stem: string, dir: string): string => {
     const prefix = dir === "" ? "" : `${dir}/`
     let name = `${prefix}${stem}${MD}`
     let n = 1
@@ -212,17 +212,23 @@ export function createFileBackedVault(options: FileVaultOptions): FileBackedVaul
     return name
   }
 
+  /** Reserve a unique root-relative filename for `title` within directory `dir` ("" = vault root). */
+  const reserveUnique = (title: string, dir = ""): string =>
+    reserveUniqueStem(vaultSlug(title), dir)
+
   const mustGet = (id: NoteId): Entry => {
     const entry = notes.get(id)
     if (entry === undefined) throw new Error(`unknown note: ${id}`)
     return entry
   }
 
-  /** The public metadata for a note, carrying its folder (`path`) so the UI can render the hierarchy;
-   * `path` is omitted for a top-level note (folders are display-only — identity is `id`/`title`). */
+  /** The public metadata for a note: its folder (`path`, omitted at the root) plus its filename stem
+   * (`name`) — the folder that would hold its children is `<path>/<name>/` (folder-note convention),
+   * which is how the sidebar nests a child under its parent note. */
   const metaOf = (id: NoteId, title: string, filename: string): NoteMeta => {
     const dir = dirOf(filename)
-    return dir === "" ? { id, title } : { id, title, path: dir }
+    const name = stemOf(filename)
+    return dir === "" ? { id, title, name } : { id, title, path: dir, name }
   }
 
   /** Materialize a new note in the mirror (id/title into frontmatter). Caller persists the file. */
@@ -324,6 +330,43 @@ export function createFileBackedVault(options: FileVaultOptions): FileBackedVaul
   tail = hydrate()
   const whenLoaded = tail.then(() => undefined)
 
+  /** The folder that holds a note's CHILDREN (folder-note convention): `<dir>/<stem>` for a note
+   * whose file is `<dir>/<stem>.md`. A child of that note lives directly under this folder. */
+  const childDirOf = (filename: string): string => {
+    const dir = dirOf(filename)
+    const stem = filename.slice(filename.lastIndexOf("/") + 1, -MD.length)
+    return dir === "" ? stem : `${dir}/${stem}`
+  }
+
+  /** When a note is renamed/moved, carry its `<stem>/` subtree so children never orphan under the old
+   * stem: every descendant note (filename under `oldChildDir/`) is relocated to `newChildDir/`. Each
+   * destination is **collision-resolved** (`reserveUniqueStem`) so a descendant can never overwrite an
+   * UNRELATED note already occupying the target path (which would silently destroy it). Processed
+   * shallowest-first with an old→new directory map, so a suffixed folder-note keeps its own children. */
+  const relocateChildren = (oldChildDir: string, newChildDir: string): void => {
+    if (oldChildDir === newChildDir) return
+    const prefix = `${oldChildDir}/`
+    const descendants = [...notes.values()].filter(
+      (c) => c.trashed !== true && c.filename.startsWith(prefix),
+    )
+    // Shallower paths first, so a folder-note is remapped before its own descendants consult the map.
+    descendants.sort((a, b) => a.filename.split("/").length - b.filename.split("/").length)
+    const dirMap = new Map<string, string>([[oldChildDir, newChildDir]])
+    for (const child of descendants) {
+      const fn = child.filename
+      const oldDir = dirOf(fn)
+      // The destination dir: the remapped (possibly-suffixed) parent if known, else the plain prefix
+      // rewrite (for a folder-only intermediate dir, which can't itself collide as a file).
+      const newDir = dirMap.get(oldDir) ?? `${newChildDir}${oldDir.slice(oldChildDir.length)}`
+      usedNames.delete(nameKey(fn))
+      const newFn = reserveUniqueStem(stemOf(fn), newDir)
+      dirMap.set(childDirOf(fn), childDirOf(newFn)) // this note's own children follow its final name
+      child.filename = newFn
+      child.meta = metaOf(child.meta.id, child.meta.title, newFn)
+      enqueue(() => fs.rename(fn, newFn)) // fn/newFn captured per iteration; parent dirs auto-created
+    }
+  }
+
   const vault: Vault = {
     list: () => [...notes.values()].map((e) => e.meta),
     read: (id) => mustGet(id).source,
@@ -370,12 +413,14 @@ export function createFileBackedVault(options: FileVaultOptions): FileBackedVaul
       const entry = notes.get(id)
       if (entry === undefined) return // no-op on unknown id
       const oldName = entry.filename
+      const oldChildDir = childDirOf(oldName) // capture the children folder before the stem changes
       usedNames.delete(nameKey(oldName)) // free the old slug before re-deriving
       const source = upsertFrontmatter(entry.source, { title }) // title only; body untouched
       // Keep the note in its own folder — only the basename (title slug) changes (folders are for
       // human grouping, so a rename never relocates a note across the hierarchy).
       const filename = reserveUnique(title, dirOf(oldName))
       notes.set(id, { meta: metaOf(id, title, filename), source, filename })
+      relocateChildren(oldChildDir, childDirOf(filename)) // the note's children follow its new stem
       enqueue(async () => {
         if (filename !== oldName) await fs.rename(oldName, filename)
         await fs.writeFile(filename, source)
@@ -415,10 +460,15 @@ export function createFileBackedVault(options: FileVaultOptions): FileBackedVaul
       const oldName = entry.filename
       const targetDir = normalizeFolder(folder)
       if (targetDir === dirOf(oldName)) return // already in that folder
+      const oldChildDir = childDirOf(oldName) // capture the children folder before the move
+      // Refuse to move a note into its OWN subtree (its children folder or below) — that would make
+      // the note a descendant of itself (and it'd match its own relocate prefix). No-op instead.
+      if (targetDir === oldChildDir || targetDir.startsWith(`${oldChildDir}/`)) return
       usedNames.delete(nameKey(oldName)) // free the old path before re-deriving in the new dir
       const newName = reserveUnique(entry.meta.title, targetDir)
       entry.filename = newName // optimistic (Strategy A: the sidebar tree reflects the move at once)
       entry.meta = metaOf(id, entry.meta.title, newName)
+      relocateChildren(oldChildDir, childDirOf(newName)) // the note's children move with it
       enqueue(async () => {
         try {
           await fs.rename(oldName, newName)
