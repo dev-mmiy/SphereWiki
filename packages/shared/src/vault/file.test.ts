@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import { parseNote } from "../frontmatter"
 import { asNoteId } from "../types"
 import { runVaultContract } from "./contract"
-import { createFileBackedVault, type FsPort, vaultSlug } from "./file"
+import { createFileBackedVault, type FsPort, normalizeFolder, vaultSlug } from "./file"
 
 /**
  * An in-memory FsPort. The `store` is keyed by FULL path (`<root>/<relpath>`) so a real fs's byte
@@ -353,6 +353,111 @@ describe("file-backed vault — on-disk specifics", () => {
     expect(parseNote(store.get("/w/work/Standup.md") ?? "").frontmatter.id).toBe("m1") // id stable
   })
 
+  it("moves a note into a folder (and back to root), keeping its id/title/body", async () => {
+    const store = new Map<string, string>()
+    const { vault, whenLoaded, flush } = createFileBackedVault({
+      fs: fakeFs(store),
+      newId: ids("id"),
+    })
+    await whenLoaded
+    const note = vault.create("Recipe", "# Recipe\n[[Home]]\n") // lands at root
+    await flush()
+    expect(store.has("/w/Recipe.md")).toBe(true)
+
+    vault.move?.(note.id, "cooking/dinners")
+    await flush()
+    expect(store.has("/w/Recipe.md")).toBe(false) // relocated out of root
+    expect(store.has("/w/cooking/dinners/Recipe.md")).toBe(true) // into the (nested) folder
+    expect(vault.read(note.id)).toContain("[[Home]]") // body (incl. links) untouched
+    expect(vault.list().find((m) => m.id === note.id)?.path).toBe("cooking/dinners") // meta reflects it
+    expect(parseNote(store.get("/w/cooking/dinners/Recipe.md") ?? "").frontmatter.id).toBe("id-1")
+
+    vault.move?.(note.id, "") // back to root
+    await flush()
+    expect(store.has("/w/Recipe.md")).toBe(true)
+    expect(store.has("/w/cooking/dinners/Recipe.md")).toBe(false)
+    expect(vault.list().find((m) => m.id === note.id)?.path).toBeUndefined()
+  })
+
+  it("preserves an edit that raced a move — no lost edit, no duplicate at the old path", async () => {
+    const store = new Map<string, string>()
+    const { vault, whenLoaded, flush } = createFileBackedVault({
+      fs: fakeFs(store),
+      newId: ids("id"),
+    })
+    await whenLoaded
+    const note = vault.create("Doc", "# Doc\n")
+    await flush()
+    // Edit then immediately move, both before the next flush: the write must land at the note's
+    // path-as-of-the-edit and the move then relocates it — the edit survives at the new path only.
+    vault.write(note.id, `${vault.read(note.id)}\n\nraced edit`) // round-trips the frontmatter (id rides along)
+    vault.move?.(note.id, "work")
+    await flush()
+    expect(store.has("/w/Doc.md")).toBe(false) // no stale duplicate left at the old path
+    expect(store.get("/w/work/Doc.md")).toContain("raced edit") // the edit is at the new path
+  })
+
+  it("reverts a FAILED move cleanly — no stale duplicate wins the reload, no lost edit", async () => {
+    const store = new Map<string, string>()
+    const base = fakeFs(store)
+    let failRename = false
+    const fs = {
+      ...base,
+      rename: async (from: string, to: string) => {
+        if (failRename) throw new Error("EBUSY (a synced folder locked the file)")
+        return base.rename(from, to)
+      },
+    }
+    const errors: unknown[] = []
+    const { vault, whenLoaded, flush } = createFileBackedVault({
+      fs,
+      newId: ids("id"),
+      onWriteError: (e) => errors.push(e),
+    })
+    await whenLoaded
+    const note = vault.create("Doc", "# Doc\n")
+    await flush()
+
+    failRename = true
+    vault.move?.(note.id, "work") // the on-disk rename will reject
+    await flush()
+    expect(errors).toHaveLength(1) // surfaced, NOT swallowed
+    expect(store.has("/w/Doc.md")).toBe(true) // still at root (the move didn't happen on disk)
+    expect(store.has("/w/work/Doc.md")).toBe(false) // and NO stale duplicate was created
+
+    // The mirror snapped back to root, so a later edit lands at root — never orphaning a duplicate.
+    vault.write(note.id, `${vault.read(note.id)}\n\nedited after the failed move`)
+    await flush()
+    expect(store.get("/w/Doc.md")).toContain("edited after the failed move")
+    expect(store.has("/w/work/Doc.md")).toBe(false)
+
+    // Reload: exactly one note, with the edit, at root — no data lost, no duplicate.
+    const reload = createFileBackedVault({ fs: fakeFs(store), newId: ids("z") })
+    await reload.whenLoaded
+    expect(reload.vault.list()).toHaveLength(1)
+    expect(reload.vault.read(note.id)).toContain("edited after the failed move")
+    expect(reload.vault.list()[0]?.path).toBeUndefined() // back at root
+  })
+
+  it("sanitizes the target folder — no traversal, no reaching a dot-folder sidecar", async () => {
+    const store = new Map<string, string>()
+    const { vault, whenLoaded, flush } = createFileBackedVault({
+      fs: fakeFs(store),
+      newId: ids("id"),
+    })
+    await whenLoaded
+    const note = vault.create("Doc", "# Doc\n")
+    await flush()
+    vault.move?.(note.id, "../.trash/../.spherewiki") // hostile input
+    await flush()
+    // Every segment ran through vaultSlug: `..` -> "untitled", leading dots stripped — so nothing
+    // escapes the vault nor lands in a reserved sidecar.
+    const path = vault.list().find((m) => m.id === note.id)?.path ?? ""
+    expect(path.split("/").some((s) => s === ".." || s.startsWith("."))).toBe(false)
+    expect(store.has("/w/.trash/Doc.md")).toBe(false)
+    expect(store.has("/w/.spherewiki/Doc.md")).toBe(false)
+  })
+
   it("soft-deletes a subfolder note into .trash/ preserving its subpath, and restores it there", async () => {
     const store = new Map<string, string>([
       ["/w/work/Doomed.md", "---\nid: d1\ntitle: Doomed\n---\n# Doomed\n"],
@@ -374,6 +479,22 @@ describe("file-backed vault — on-disk specifics", () => {
     await second.flush()
     expect(store.has("/w/work/Doomed.md")).toBe(true) // back in work/, not at root
     expect(store.has("/w/.trash/work/Doomed.md")).toBe(false)
+  })
+
+  it("normalizeFolder sanitizes segments, drops blanks, and neutralizes traversal / dot-folders", () => {
+    expect(normalizeFolder("")).toBe("") // root
+    expect(normalizeFolder("work")).toBe("work")
+    expect(normalizeFolder(" work / projects ")).toBe("work/projects") // trims, drops blanks
+    expect(normalizeFolder("a//b")).toBe("a/b") // empty segment dropped
+    expect(normalizeFolder("Project A/notes")).toBe("Project A/notes") // spaces kept
+    // `..` and leading-dot segments can never escape the vault or name a reserved sidecar.
+    expect(normalizeFolder("..").split("/").includes("..")).toBe(false)
+    expect(normalizeFolder(".trash").startsWith(".")).toBe(false)
+    expect(
+      normalizeFolder("../.spherewiki")
+        .split("/")
+        .some((s) => s.startsWith(".")),
+    ).toBe(false)
   })
 
   it("vaultSlug keeps spaces, strips fs-illegal chars, and never yields an empty stem", () => {

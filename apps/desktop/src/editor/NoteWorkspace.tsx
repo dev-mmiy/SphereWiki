@@ -4,6 +4,7 @@ import {
   asNoteId,
   can,
   type DiffChunk,
+  type NoteId,
   roleFor,
   type Vault,
 } from "@spherewiki/shared"
@@ -255,6 +256,16 @@ export function NoteWorkspace({
                 setAiStatus(null)
                 ws.rename(id, next)
               }}
+              {...(ws.canMove
+                ? {
+                    onMove: (id: NoteId) => {
+                      const current = ws.notes.find((m) => m.id === id)?.path ?? ""
+                      const folder = window.prompt("Move to folder (blank = root)", current)
+                      if (folder === null) return
+                      ws.move(id, folder)
+                    },
+                  }
+                : {})}
               onRestore={(id) => ws.restore(id)}
             />
           </aside>

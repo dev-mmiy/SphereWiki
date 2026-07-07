@@ -144,6 +144,20 @@ export function vaultSlug(title: string): string {
 }
 
 /**
+ * Sanitize a user-supplied folder into a safe "/"-joined relative dir (`""` = root): each segment is
+ * run through `vaultSlug`, so fs-illegal chars, leading dots (no reaching `.trash/`/`.spherewiki/`),
+ * and `.`/`..` traversal are all neutralized before it becomes a path. Empty/blank segments drop.
+ */
+export function normalizeFolder(folder: string): string {
+  return folder
+    .split("/")
+    .map((segment) => segment.trim())
+    .filter((segment) => segment !== "")
+    .map(vaultSlug)
+    .join("/")
+}
+
+/**
  * A file-backed Vault: raw Markdown `.md` files under a per-workspace directory are the source of
  * truth (the interim localStorage vault's on-disk successor, M2b.2). Implements Strategy A — the
  * `Vault` seam is synchronous but fs IO is async, so a full in-memory mirror is hydrated once at
@@ -316,6 +330,10 @@ export function createFileBackedVault(options: FileVaultOptions): FileBackedVaul
     write: (id, body) => {
       const entry = mustGet(id)
       entry.source = body // verbatim — byte-exact persistence (id/title ride in the caller's body)
+      // Capture the target path NOW: a `rename`/`move` issued after this edit (but before its
+      // write-through runs) must NOT redirect this write to the note's new path — the write belongs
+      // to the path the note had when it was edited, and the later rename/move then relocates it.
+      const target = entry.filename
       if (entry.trashed === true && fs.untrash !== undefined) {
         // A write means the app is treating this note as LIVE (it never edits a trashed note — the
         // active-note guard excludes tombstoned ids). So `trashed` is STALE (a create-by-title
@@ -324,11 +342,11 @@ export function createFileBackedVault(options: FileVaultOptions): FileBackedVaul
         entry.trashed = false
         const untrash = fs.untrash
         enqueue(async () => {
-          await untrash(entry.filename).catch(() => {}) // best-effort; the write below still persists
-          await fs.writeFile(entry.filename, body)
+          await untrash(target).catch(() => {}) // best-effort; the write below still persists
+          await fs.writeFile(target, body)
         })
       } else {
-        enqueue(() => fs.writeFile(entry.filename, body))
+        enqueue(() => fs.writeFile(target, body))
       }
     },
     create: (title, body = "") => {
@@ -375,6 +393,38 @@ export function createFileBackedVault(options: FileVaultOptions): FileBackedVaul
       entry.trashed = false
       const move = fs.untrash
       enqueue(() => move(entry.filename))
+    },
+    // Move a note into another folder (`""` = root), keeping id/title/body — purely organizational.
+    // The `.md` relocates (basename re-derived from the title, collision-resolved in the target dir).
+    // A single on-disk `rename` does the move: any edit that raced it lands correctly because `write`
+    // captures its target path (above) and the queue is FIFO, so no stale duplicate is ever created.
+    move: (id, folder) => {
+      const entry = notes.get(id)
+      if (entry === undefined || entry.trashed === true) return
+      const oldName = entry.filename
+      const targetDir = normalizeFolder(folder)
+      if (targetDir === dirOf(oldName)) return // already in that folder
+      usedNames.delete(nameKey(oldName)) // free the old path before re-deriving in the new dir
+      const newName = reserveUnique(entry.meta.title, targetDir)
+      entry.filename = newName // optimistic (Strategy A: the sidebar tree reflects the move at once)
+      entry.meta = metaOf(id, entry.meta.title, newName)
+      enqueue(async () => {
+        try {
+          await fs.rename(oldName, newName)
+        } catch (error) {
+          // The on-disk move failed (e.g. a synced folder briefly locked the file). Snap the mirror
+          // back to the old path so later writes land THERE — never leaving a stale duplicate at the
+          // old path that could win the reload dedup and silently revert the move (and later edits).
+          // Guard on the mirror still pointing here, so a subsequent move isn't clobbered.
+          if (entry.filename === newName) {
+            usedNames.delete(nameKey(newName))
+            usedNames.add(nameKey(oldName))
+            entry.filename = oldName
+            entry.meta = metaOf(id, entry.meta.title, oldName)
+          }
+          throw error // surfaced via the queue's onWriteError (not swallowed)
+        }
+      })
     },
   }
 

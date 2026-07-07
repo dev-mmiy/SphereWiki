@@ -145,6 +145,12 @@ export interface VaultWorkspace {
    * — it is a registry-level edit, not part of per-note body history (like delete/restore).
    */
   rename: (id: NoteId, title: string) => void
+  /** Move a note into another folder (`""` = root); organizational only — links/graph are unaffected.
+   * No-op unless the vault supports folders (`canMove`). */
+  move: (id: NoteId, folder: string) => void
+  /** Whether the active vault supports folders (the on-disk file vault does; localStorage does not) —
+   * gate the sidebar's "move" affordance on it. */
+  canMove: boolean
   /** Soft-delete a note: hidden from the list across peers, body retained, revertible. */
   remove: (id: NoteId) => void
   /** Restore a soft-deleted note. */
@@ -769,6 +775,16 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     setGraph(computeGraph(vault))
     setTagIndex(computeTags(vault))
   }
+
+  // Move a note into another folder (`""` = root). Purely organizational: the `.md` relocates but the
+  // id/title/body — and so every `[[wikilink]]`, backlink, and graph edge — are unchanged, so only the
+  // note list (the sidebar tree) needs refreshing. No-op unless the vault supports folders.
+  const canMove = vault.move !== undefined
+  const move = (id: NoteId, folder: string): void => {
+    if (vault.move === undefined) return
+    vault.move(id, folder)
+    setNotes(unionList())
+  }
   // Delete = a revertible registry tombstone: it hides the note from the list across peers but
   // never erases its Markdown body (kept in the vault), so it can be restored and no human work
   // is silently destroyed. The reconcile fired by this set updates the list and, if this was the
@@ -930,6 +946,8 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     selectByTitle,
     create,
     rename,
+    move,
+    canMove,
     remove,
     restore,
     commit,

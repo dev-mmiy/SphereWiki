@@ -36,6 +36,7 @@ export function NoteList({
   deleted = [],
   onDelete,
   onRename,
+  onMove,
   onRestore,
   canEdit = true,
 }: {
@@ -50,6 +51,8 @@ export function NoteList({
   onDelete?: (id: NoteId) => void
   /** Rename a note (repoints its backlinks). Omitted/disabled when the user can't write. */
   onRename?: (id: NoteId) => void
+  /** Move a note into a folder. Omitted when the vault has no folder concept (web/localStorage). */
+  onMove?: (id: NoteId) => void
   /** Restore a soft-deleted note. */
   onRestore?: (id: NoteId) => void
   canEdit?: boolean
@@ -67,6 +70,16 @@ export function NoteList({
           onClick={() => onRename(m.id)}
         >
           ✎
+        </button>
+      )}
+      {onMove && (
+        <button
+          type="button"
+          aria-label={`Move ${m.title}`}
+          disabled={!canEdit}
+          onClick={() => onMove(m.id)}
+        >
+          🗀
         </button>
       )}
       {onDelete && (

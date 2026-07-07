@@ -65,4 +65,29 @@ describe("NoteList — folder tree (v1b)", () => {
     screen.getByLabelText("Rename Meeting").click()
     expect(onRename).toHaveBeenCalledWith(asNoteId("m"))
   })
+
+  it("shows a move affordance only when onMove is provided (folder-capable vault)", () => {
+    const onMove = vi.fn()
+    const { rerender } = render(
+      <NoteList
+        notes={[note("a", "Home")]}
+        activeId={asNoteId("a")}
+        onSelect={vi.fn()}
+        onCreate={vi.fn()}
+      />,
+    )
+    expect(screen.queryByLabelText("Move Home")).toBeNull() // no folder support -> no move button
+
+    rerender(
+      <NoteList
+        notes={[note("a", "Home")]}
+        activeId={asNoteId("a")}
+        onSelect={vi.fn()}
+        onCreate={vi.fn()}
+        onMove={onMove}
+      />,
+    )
+    screen.getByLabelText("Move Home").click()
+    expect(onMove).toHaveBeenCalledWith(asNoteId("a"))
+  })
 })

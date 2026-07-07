@@ -46,4 +46,12 @@ export interface Vault {
    */
   trash?(id: NoteId): void
   restore?(id: NoteId): void
+  /**
+   * Optional: move a note into a different folder (`""` = the vault root) — a file-backed vault
+   * relocates the `.md`, keeping its `id`, `title`, and body. Folders are display-only, so this is
+   * purely organizational: `[[wikilinks]]`, backlinks, and the graph are unaffected (a note is
+   * addressed by title/id, never by path). No-op on an unknown/trashed note or if already there. The
+   * in-memory / localStorage vaults (no folder concept) leave it undefined.
+   */
+  move?(id: NoteId, folder: string): void
 }
