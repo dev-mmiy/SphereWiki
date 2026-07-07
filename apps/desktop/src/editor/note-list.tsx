@@ -50,7 +50,7 @@ export function NoteList({
   onDelete,
   onRename,
   onMove,
-  onCreateSubnote,
+  onCreateFolder,
   onRestore,
   canEdit = true,
 }: {
@@ -68,8 +68,9 @@ export function NoteList({
   onRename?: (id: NoteId, title: string) => void
   /** Move a note into `folder` (`""` = root). Omitted when the vault has no folder concept (web). */
   onMove?: (id: NoteId, folder: string) => void
-  /** Create a child note UNDER the currently-active note (making it a folder). Omitted without folders. */
-  onCreateSubnote?: () => void
+  /** Turn the currently-active note into a FOLDER by creating a child note under it. Omitted without
+   * folder support (web). Labelled "New folder" — it groups notes under the active one. */
+  onCreateFolder?: () => void
   /** Restore a soft-deleted note. */
   onRestore?: (id: NoteId) => void
   canEdit?: boolean
@@ -196,12 +197,12 @@ export function NoteList({
 
   return (
     <nav>
-      {/* Creation is top-level: "New subnote" (left) adds a child under the ACTIVE note (making it a
+      {/* Creation is top-level: "New folder" (left) groups notes under the ACTIVE note (making it a
           folder); "New note" (right) adds a new top-level note. No per-note ＋ clutters the tree. */}
       <div className="new-buttons">
-        {onCreateSubnote && (
-          <button type="button" onClick={onCreateSubnote} disabled={!canCreate}>
-            New subnote
+        {onCreateFolder && (
+          <button type="button" onClick={onCreateFolder} disabled={!canCreate}>
+            New folder
           </button>
         )}
         <button type="button" onClick={onCreate} disabled={!canCreate}>

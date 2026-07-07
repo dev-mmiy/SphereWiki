@@ -79,8 +79,8 @@ describe("NoteList — folder tree (v1b)", () => {
     expect(within(details).getByRole("button", { name: "Task" })).toBeTruthy() // Task nested under it
   })
 
-  it("offers a top 'New subnote' button (only with folder support) that fires onCreateSubnote", () => {
-    const onCreateSubnote = vi.fn()
+  it("offers a top 'New folder' button (only with folder support) that fires onCreateFolder", () => {
+    const onCreateFolder = vi.fn()
     const { rerender } = render(
       <NoteList
         notes={[note("a", "Home")]}
@@ -89,7 +89,7 @@ describe("NoteList — folder tree (v1b)", () => {
         onCreate={vi.fn()}
       />,
     )
-    expect(screen.queryByRole("button", { name: "New subnote" })).toBeNull() // no folders -> no subnote
+    expect(screen.queryByRole("button", { name: "New folder" })).toBeNull() // no folders -> no subnote
 
     rerender(
       <NoteList
@@ -97,13 +97,13 @@ describe("NoteList — folder tree (v1b)", () => {
         activeId={asNoteId("a")}
         onSelect={vi.fn()}
         onCreate={vi.fn()}
-        onCreateSubnote={onCreateSubnote}
+        onCreateFolder={onCreateFolder}
       />,
     )
     // Both creation buttons live at the top; no per-note ＋ clutters the tree.
     expect(screen.queryByLabelText(/^New note in /)).toBeNull()
-    screen.getByRole("button", { name: "New subnote" }).click()
-    expect(onCreateSubnote).toHaveBeenCalled()
+    screen.getByRole("button", { name: "New folder" }).click()
+    expect(onCreateFolder).toHaveBeenCalled()
   })
 
   it("renames via an inline input (Enter commits the typed title) — works without window.prompt", () => {
