@@ -1,3 +1,4 @@
+mod duckdb_conformance;
 mod vault;
 
 /// A trivial IPC command proving the frontend <-> Rust bridge works. The real vault / DuckDB
