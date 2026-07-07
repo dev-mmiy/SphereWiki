@@ -182,6 +182,12 @@ export interface UseVaultWorkspaceOptions {
   /** Inject AI providers (the real Claude/ONNX backends at M4b; deterministic stubs in tests). */
   readonly suggester?: SuggestionProvider
   readonly embedder?: EmbeddingProvider
+  /**
+   * Inject a pre-built, already-hydrated per-workspace VectorIndex (the on-disk DuckDB index under
+   * the native shell; see `createTauriVectorIndex`). Must use the same `embedder`'s model. When
+   * omitted the hook builds an in-memory index (web / tests).
+   */
+  readonly index?: VectorIndex
   /** When set, the active note syncs live through the super-peer at this WebSocket URL. */
   readonly syncUrl?: string
   /**
@@ -273,7 +279,8 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
   } | null>(null)
   if (aiRef.current === null) {
     const embedder = options.embedder ?? createLocalEmbedder()
-    const index = createMemoryVectorIndex(workspaceId, embedder.info)
+    // An injected, already-hydrated index (the on-disk DuckDB store under Tauri) wins; else in-memory.
+    const index = options.index ?? createMemoryVectorIndex(workspaceId, embedder.info)
     aiRef.current = {
       embedder,
       suggester: options.suggester ?? createHeuristicSuggester(),

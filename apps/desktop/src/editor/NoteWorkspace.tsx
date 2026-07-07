@@ -1,4 +1,4 @@
-import type { Autonomy, OnSaveResult } from "@spherewiki/ai"
+import type { Autonomy, EmbeddingProvider, OnSaveResult, VectorIndex } from "@spherewiki/ai"
 import {
   type AuthProvider,
   asNoteId,
@@ -60,10 +60,14 @@ function describeResult(r: OnSaveResult): string {
 export function NoteWorkspace({
   auth = localAuth(),
   vault,
+  index,
+  embedder,
 }: {
   auth?: AuthProvider
-  /** The on-disk file vault under the native shell (App awaits its hydration first); web omits it. */
+  /** The on-disk backend under the native shell (App awaits its hydration first); web omits these. */
   vault?: Vault
+  index?: VectorIndex
+  embedder?: EmbeddingProvider
 }) {
   // Kept-vs-reverted counters persist (localStorage) so they accumulate across sessions. Keyed by
   // the local-mode WORKSPACE_ID today; when real multi-workspace switching lands, derive this key
@@ -86,6 +90,8 @@ export function NoteWorkspace({
   // When syncing, a local CRDT cache (IndexedDB) keeps the room readable offline.
   const ws = useVaultWorkspace({
     ...(vault !== undefined ? { vault } : {}),
+    ...(index !== undefined ? { index } : {}),
+    ...(embedder !== undefined ? { embedder } : {}),
     syncUrl: import.meta.env.VITE_SYNC_URL,
     syncToken: import.meta.env.VITE_SYNC_TOKEN,
     persistVaultKey: `spherewiki:vault:${WORKSPACE_ID}`,

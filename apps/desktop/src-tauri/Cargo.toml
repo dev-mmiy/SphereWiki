@@ -21,8 +21,5 @@ serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
 tauri = { version = "2.11.3", features = [] }
 tauri-plugin-log = "2"
-
-[dev-dependencies]
-# Bundled DuckDB — a conformance check that it compiles/links here + does the vector storage M2b.4
-# relies on. Promoted to a runtime [dependency] when M2b.4 adds the real vector-store commands.
+# Bundled DuckDB backs the per-workspace derived index (vectors at M2b.4; FTS/graph at M2b.5+).
 duckdb = { version = "1.3.2", features = ["bundled"] }

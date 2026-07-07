@@ -37,12 +37,18 @@ export interface TauriVaultOptions {
   readonly onWriteError?: (error: unknown) => void
 }
 
+/**
+ * Build the on-disk file-backed vault for a workspace and hydrate it before returning, so callers
+ * receive a vault whose `list()`/`read()` already reflect disk (a drop-in for the synchronously
+ * constructed localStorage vault). `invoke` is injected (the caller owns the `@tauri-apps/api`
+ * import) so this stays unit-testable without the native runtime.
+ */
 export async function createTauriVault(
   workspace: string,
   seed: ReadonlyArray<{ title: string; body: string }>,
+  invoke: Invoke,
   options: TauriVaultOptions = {},
 ): Promise<FileBackedVault> {
-  const { invoke } = await import("@tauri-apps/api/core")
   const backed = createFileBackedVault({
     fs: createTauriFsPort(workspace, invoke),
     root: workspace,

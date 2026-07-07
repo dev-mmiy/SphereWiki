@@ -20,8 +20,9 @@ fn valid_workspace(id: &str) -> bool {
       .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
-/// The vault directory for a workspace: `<app-data-dir>/vaults/<workspace>`.
-fn vault_root(app: &tauri::AppHandle, workspace: &str) -> Result<PathBuf, String> {
+/// The vault directory for a workspace: `<app-data-dir>/vaults/<workspace>`. `pub(crate)` so the
+/// derived-index module (DuckDB) can scope its per-workspace `.duckdb` file under the same root.
+pub(crate) fn vault_root(app: &tauri::AppHandle, workspace: &str) -> Result<PathBuf, String> {
   if !valid_workspace(workspace) {
     return Err(format!("invalid workspace id: {workspace:?}"));
   }

@@ -1,5 +1,6 @@
 mod duckdb_conformance;
 mod vault;
+mod vector;
 
 /// A trivial IPC command proving the frontend <-> Rust bridge works. The real vault / DuckDB
 /// commands register alongside it in the invoke handler.
@@ -28,7 +29,11 @@ pub fn run() {
       vault::vault_list_files,
       vault::vault_read_file,
       vault::vault_write_file,
-      vault::vault_rename_file
+      vault::vault_rename_file,
+      vector::vector_records,
+      vector::vector_upsert,
+      vector::vector_remove,
+      vector::vector_clear
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
