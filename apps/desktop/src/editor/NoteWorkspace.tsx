@@ -264,6 +264,11 @@ export function NoteWorkspace({
                       if (folder === null) return
                       ws.move(id, folder)
                     },
+                    onCreateInFolder: (folder: string) => {
+                      clearDiff()
+                      setAiStatus(null)
+                      ws.create(`Note ${ws.notes.length + 1}`, folder)
+                    },
                   }
                 : {})}
               onRestore={(id) => ws.restore(id)}

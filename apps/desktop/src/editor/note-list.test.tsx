@@ -66,6 +66,24 @@ describe("NoteList — folder tree (v1b)", () => {
     expect(onRename).toHaveBeenCalledWith(asNoteId("m"))
   })
 
+  it("offers create-in-folder on each folder with its full path, without toggling the folder", () => {
+    const onCreateInFolder = vi.fn()
+    render(
+      <NoteList
+        notes={[note("d", "Deep", "work/projects")]}
+        activeId={asNoteId("d")}
+        onSelect={vi.fn()}
+        onCreate={vi.fn()}
+        onCreateInFolder={onCreateInFolder}
+      />,
+    )
+    // The nested folder's + passes the FULL path so the note is minted at the right depth.
+    screen.getByLabelText("New note in projects").click()
+    expect(onCreateInFolder).toHaveBeenCalledWith("work/projects")
+    screen.getByLabelText("New note in work").click()
+    expect(onCreateInFolder).toHaveBeenCalledWith("work")
+  })
+
   it("shows a move affordance only when onMove is provided (folder-capable vault)", () => {
     const onMove = vi.fn()
     const { rerender } = render(

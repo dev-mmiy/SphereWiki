@@ -351,14 +351,19 @@ export function createFileBackedVault(options: FileVaultOptions): FileBackedVaul
     },
     create: (title, body = "") => {
       const entry = putNew(asNoteId(newId()), title, body)
-      enqueue(() => fs.writeFile(entry.filename, entry.source))
+      // Capture the path at enqueue time: create-in-folder issues a `move` in the SAME tick, so this
+      // first write must land at the note's original path (the move's rename then relocates it) — not
+      // chase `entry.filename` to the new folder and leave the rename with no source file.
+      const target = entry.filename
+      enqueue(() => fs.writeFile(target, entry.source))
       return entry.meta
     },
     ensure: (id, title, body = "") => {
       const existing = notes.get(id)
       if (existing !== undefined) return existing.meta // insert-if-absent: never overwrite a body
       const entry = putNew(id, title, body)
-      enqueue(() => fs.writeFile(entry.filename, entry.source))
+      const target = entry.filename
+      enqueue(() => fs.writeFile(target, entry.source))
       return entry.meta
     },
     rename: (id, title) => {
@@ -385,6 +390,9 @@ export function createFileBackedVault(options: FileVaultOptions): FileBackedVaul
       if (entry === undefined || entry.trashed === true || fs.trash === undefined) return
       entry.trashed = true
       const move = fs.trash
+      // Read the path at RUN time (not captured): nothing relocates a note before a same-tick trash
+      // (`move` bails on a trashed note), and a run-time read stays correct even if a preceding failed
+      // `move` reverted `entry.filename` back — so the file is always trashed from where it actually is.
       enqueue(() => move(entry.filename))
     },
     restore: (id) => {
@@ -392,7 +400,10 @@ export function createFileBackedVault(options: FileVaultOptions): FileBackedVaul
       if (entry === undefined || entry.trashed !== true || fs.untrash === undefined) return
       entry.trashed = false
       const move = fs.untrash
-      enqueue(() => move(entry.filename))
+      // Capture: a `move` may follow a restore in the same tick (restore then relocate), and it must
+      // untrash the note's ORIGINAL path, not chase the path the later move set.
+      const target = entry.filename
+      enqueue(() => move(target))
     },
     // Move a note into another folder (`""` = root), keeping id/title/body — purely organizational.
     // The `.md` relocates (basename re-derived from the title, collision-resolved in the target dir).

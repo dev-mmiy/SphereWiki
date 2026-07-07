@@ -135,7 +135,9 @@ export interface VaultWorkspace {
   readonly deleted: readonly NoteMeta[]
   select: (id: NoteId) => void
   selectByTitle: (title: string) => void
-  create: (title: string) => void
+  /** Create a note (resolve-or-restore on a duplicate title). Pass `folder` to mint it inside a
+   * folder (needs `canMove`; ignored on a vault without folders). */
+  create: (title: string, folder?: string) => void
   /**
    * Rename a note: update its display title (the registry is the title authority and converges
    * to peers via last-writer-wins) and atomically repoint every `[[old title]]` backlink across
@@ -690,7 +692,7 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     [unionList],
   )
   const create = useCallback(
-    (title: string): void => {
+    (title: string, folder = ""): void => {
       // Resolve-or-restore: never mint a duplicate of a note that already holds this title.
       // A visible note -> just select it. A *trashed* note -> restore it (recovering its real
       // body) rather than minting a blank duplicate, so a ghost/red-link click can't orphan a
@@ -710,6 +712,10 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
         return
       }
       const meta = vault.create(title, `# ${title}\n`)
+      // Create-in-folder: mint at root then relocate to the requested folder (both are synchronous
+      // mirror updates, so the sidebar shows it in the folder at once; on disk the queued write +
+      // rename land it there). No-op folder ("") / a vault without folders keeps it at the root.
+      if (folder !== "") vault.move?.(meta.id, folder)
       pendingSeedRef.current.add(meta.id) // seed this note's body into its synced doc on open
       registry.set(meta.id, { title }, LOCAL) // propagate the list entry to peers
       setNotes(unionList())

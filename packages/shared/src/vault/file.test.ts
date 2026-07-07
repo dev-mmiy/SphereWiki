@@ -379,6 +379,22 @@ describe("file-backed vault — on-disk specifics", () => {
     expect(vault.list().find((m) => m.id === note.id)?.path).toBeUndefined()
   })
 
+  it("create + move in one tick lands a new note directly in a folder (create-in-folder)", async () => {
+    // Models the hook's create-in-folder: mint at root, then move — both before any flush.
+    const store = new Map<string, string>()
+    const { vault, whenLoaded, flush } = createFileBackedVault({
+      fs: fakeFs(store),
+      newId: ids("id"),
+    })
+    await whenLoaded
+    const note = vault.create("Task", "# Task\n")
+    vault.move?.(note.id, "work/todo")
+    await flush()
+    expect(store.has("/w/Task.md")).toBe(false) // never lingers at root
+    expect(store.has("/w/work/todo/Task.md")).toBe(true) // minted straight into the folder
+    expect(vault.list().find((m) => m.id === note.id)?.path).toBe("work/todo")
+  })
+
   it("preserves an edit that raced a move — no lost edit, no duplicate at the old path", async () => {
     const store = new Map<string, string>()
     const { vault, whenLoaded, flush } = createFileBackedVault({
@@ -437,6 +453,35 @@ describe("file-backed vault — on-disk specifics", () => {
     expect(reload.vault.list()).toHaveLength(1)
     expect(reload.vault.read(note.id)).toContain("edited after the failed move")
     expect(reload.vault.list()[0]?.path).toBeUndefined() // back at root
+  })
+
+  it("trashes a note from its ACTUAL path even when a same-tick move failed and reverted", async () => {
+    const store = new Map<string, string>()
+    const base = trashFake(store)
+    let failRename = false
+    const fs: FsPort = {
+      ...base,
+      rename: async (from, to) => {
+        if (failRename) throw new Error("EBUSY (synced lock)")
+        return base.rename(from, to)
+      },
+    }
+    const { vault, whenLoaded, flush } = createFileBackedVault({
+      fs,
+      newId: ids("id"),
+      onWriteError: () => {},
+    })
+    await whenLoaded
+    const note = vault.create("Doc", "# Doc\n")
+    await flush()
+
+    failRename = true
+    vault.move?.(note.id, "work") // fails on flush → reverts entry.filename to root
+    vault.trash?.(note.id) // same window → must trash from where the file ACTUALLY is (root)
+    await flush()
+    expect(store.has("/w/Doc.md")).toBe(false) // trashed out of root
+    expect(store.has("/w/.trash/Doc.md")).toBe(true) // from its real path, not the stale moved path
+    expect(store.has("/w/.trash/work/Doc.md")).toBe(false)
   })
 
   it("sanitizes the target folder — no traversal, no reaching a dot-folder sidecar", async () => {

@@ -37,6 +37,7 @@ export function NoteList({
   onDelete,
   onRename,
   onMove,
+  onCreateInFolder,
   onRestore,
   canEdit = true,
 }: {
@@ -53,6 +54,8 @@ export function NoteList({
   onRename?: (id: NoteId) => void
   /** Move a note into a folder. Omitted when the vault has no folder concept (web/localStorage). */
   onMove?: (id: NoteId) => void
+  /** Create a note directly inside a folder (its "/"-joined path). Omitted without folder support. */
+  onCreateInFolder?: (folder: string) => void
   /** Restore a soft-deleted note. */
   onRestore?: (id: NoteId) => void
   canEdit?: boolean
@@ -96,18 +99,38 @@ export function NoteList({
   )
 
   // Render a folder node: its own notes first, then its subfolders (alphabetical) as collapsible
-  // groups — native <details> so it's keyboard-accessible and needs no React state.
-  const renderNode = (node: FolderNode, keyPrefix: string): ReactNode => (
+  // groups — native <details> so it's keyboard-accessible and needs no React state. `folderPath` is
+  // the current node's "/"-joined path ("" at the root), used for the key and create-in-folder.
+  const renderNode = (node: FolderNode, folderPath: string): ReactNode => (
     <>
       {node.notes.length > 0 && <ul>{node.notes.map(renderNote)}</ul>}
       {[...node.folders.entries()]
         .sort(([a], [b]) => (a.normalize("NFC") < b.normalize("NFC") ? -1 : 1))
-        .map(([name, child]) => (
-          <details key={`${keyPrefix}/${name}`} open className="folder">
-            <summary aria-label={`Folder ${name}`}>{name}</summary>
-            {renderNode(child, `${keyPrefix}/${name}`)}
-          </details>
-        ))}
+        .map(([name, child]) => {
+          const childPath = folderPath === "" ? name : `${folderPath}/${name}`
+          return (
+            <details key={childPath} open className="folder">
+              <summary aria-label={`Folder ${name}`}>
+                {name}
+                {onCreateInFolder && (
+                  <button
+                    type="button"
+                    aria-label={`New note in ${name}`}
+                    disabled={!canCreate}
+                    // preventDefault so clicking + doesn't also toggle the <details> open/closed.
+                    onClick={(e) => {
+                      e.preventDefault()
+                      onCreateInFolder(childPath)
+                    }}
+                  >
+                    ＋
+                  </button>
+                )}
+              </summary>
+              {renderNode(child, childPath)}
+            </details>
+          )
+        })}
     </>
   )
 
