@@ -79,31 +79,43 @@ describe("NoteList — folder tree (v1b)", () => {
     expect(within(details).getByRole("button", { name: "Task" })).toBeTruthy() // Task nested under it
   })
 
-  it("offers a top 'New folder' button (only with folder support) that fires onCreateFolder", () => {
-    const onCreateFolder = vi.fn()
-    const { rerender } = render(
+  it("shows New folder / New note / New sub-note per the handlers, and no per-note ＋", () => {
+    render(
       <NoteList
         notes={[note("a", "Home")]}
         activeId={asNoteId("a")}
         onSelect={vi.fn()}
         onCreate={vi.fn()}
+        onCreateFolder={vi.fn()}
+        onCreateSubnote={vi.fn()}
       />,
     )
-    expect(screen.queryByRole("button", { name: "New folder" })).toBeNull() // no folders -> no subnote
+    expect(screen.getByRole("button", { name: "New folder" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "New note" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "New sub-note" })).toBeTruthy()
+    expect(screen.queryByLabelText(/^New note in /)).toBeNull() // creation is top-level, not per-node
+  })
 
-    rerender(
+  it("renders explicit (empty) folders and selects one on click (the creation context)", () => {
+    const onSelectFolder = vi.fn()
+    render(
       <NoteList
         notes={[note("a", "Home")]}
+        folders={["Ideas", "work/2026"]} // empty folders — no notes inside yet
         activeId={asNoteId("a")}
+        selectedFolder="Ideas"
         onSelect={vi.fn()}
         onCreate={vi.fn()}
-        onCreateFolder={onCreateFolder}
+        onSelectFolder={onSelectFolder}
       />,
     )
-    // Both creation buttons live at the top; no per-note ＋ clutters the tree.
-    expect(screen.queryByLabelText(/^New note in /)).toBeNull()
-    screen.getByRole("button", { name: "New folder" }).click()
-    expect(onCreateFolder).toHaveBeenCalled()
+    // An empty folder shows as a 📁 container even before it holds a note; nested paths nest.
+    const ideas = screen.getByRole("button", { name: "Folder Ideas" })
+    expect(ideas.getAttribute("aria-current")).toBe("true") // the selected folder is highlighted
+    expect(screen.getByRole("button", { name: "Folder work" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Folder 2026" })).toBeTruthy() // work/2026 nested
+    screen.getByRole("button", { name: "Folder work" }).click()
+    expect(onSelectFolder).toHaveBeenCalledWith("work")
   })
 
   it("renames via an inline input (Enter commits the typed title) — works without window.prompt", () => {

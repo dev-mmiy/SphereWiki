@@ -16,14 +16,12 @@ interface TreeNode {
 }
 
 /** Build the outliner tree: each note attaches to the node at `[...path segments, name]`, so a note
- * and its same-named child folder merge into one expandable node. Segments are NFC-normalized so a
- * child's path segment matches its parent note's stem even across macOS NFD/NFC. */
-function buildTree(notes: readonly NoteMeta[]): TreeNode {
+ * and its same-named child folder merge into one expandable node; each explicit (possibly-empty)
+ * FOLDER path also gets a node (a container with no `note`). Segments are NFC-normalized so a child's
+ * path segment matches its parent note's stem even across macOS NFD/NFC. */
+function buildTree(notes: readonly NoteMeta[], folders: readonly string[]): TreeNode {
   const root: TreeNode = { name: "", path: "", children: new Map() }
-  for (const m of notes) {
-    const segments = [...(m.path ?? "").split("/").filter((s) => s !== ""), m.name ?? m.title].map(
-      (s) => s.normalize("NFC"),
-    )
+  const ensureNode = (segments: readonly string[]): TreeNode => {
     let node = root
     let path = ""
     for (const seg of segments) {
@@ -35,8 +33,16 @@ function buildTree(notes: readonly NoteMeta[]): TreeNode {
       }
       node = child
     }
-    node.note = m
+    return node
   }
+  const norm = (p: string): string[] =>
+    p
+      .split("/")
+      .filter((s) => s !== "")
+      .map((s) => s.normalize("NFC"))
+  for (const folderPath of folders) ensureNode(norm(folderPath)) // empty folders: a container node only
+  for (const m of notes)
+    ensureNode([...norm(m.path ?? ""), (m.name ?? m.title).normalize("NFC")]).note = m
   return root
 }
 
@@ -47,30 +53,41 @@ export function NoteList({
   onCreate,
   canCreate = true,
   deleted = [],
+  folders = [],
+  selectedFolder = null,
+  onSelectFolder,
   onDelete,
   onRename,
   onMove,
   onCreateFolder,
+  onCreateSubnote,
   onRestore,
   canEdit = true,
 }: {
   notes: readonly NoteMeta[]
   activeId: NoteId
   onSelect: (id: NoteId) => void
-  /** Create a new top-level note. */
+  /** Create a new note in the current context (the selected folder / active note's folder / root). */
   onCreate: () => void
   canCreate?: boolean
   /** Tombstoned notes still recoverable (the "trash"). */
   deleted?: readonly NoteMeta[]
+  /** Explicit (possibly-empty) folder paths, so a container shows even before it holds a note. */
+  folders?: readonly string[]
+  /** The folder currently selected as the creation context (highlighted). */
+  selectedFolder?: string | null
+  /** Select a folder as the creation context. Omitted when the vault has no folders (web). */
+  onSelectFolder?: (path: string) => void
   /** Soft-delete a note (revertible). Omitted/disabled when the user can't write. */
   onDelete?: (id: NoteId) => void
   /** Rename a note to `title` (repoints its backlinks). Omitted/disabled when the user can't write. */
   onRename?: (id: NoteId, title: string) => void
   /** Move a note into `folder` (`""` = root). Omitted when the vault has no folder concept (web). */
   onMove?: (id: NoteId, folder: string) => void
-  /** Turn the currently-active note into a FOLDER by creating a child note under it. Omitted without
-   * folder support (web). Labelled "New folder" — it groups notes under the active one. */
+  /** Create a new FOLDER in the current context. Omitted without folder support (web). */
   onCreateFolder?: () => void
+  /** Create a writable child note UNDER the active note (a "sub-note"). Omitted without folders. */
+  onCreateSubnote?: () => void
   /** Restore a soft-deleted note. */
   onRestore?: (id: NoteId) => void
   canEdit?: boolean
@@ -129,6 +146,19 @@ export function NoteList({
             }}
           >
             {m.title}
+          </button>
+        ) : onSelectFolder ? (
+          <button
+            type="button"
+            className="folder-label"
+            aria-current={node.path === selectedFolder}
+            aria-label={`Folder ${node.name}`}
+            onClick={(e) => {
+              e.preventDefault()
+              onSelectFolder(node.path)
+            }}
+          >
+            📁 {node.name}
           </button>
         ) : (
           <span className="folder-label">📁 {node.name}</span>
@@ -197,8 +227,9 @@ export function NoteList({
 
   return (
     <nav>
-      {/* Creation is top-level: "New folder" (left) groups notes under the ACTIVE note (making it a
-          folder); "New note" (right) adds a new top-level note. No per-note ＋ clutters the tree. */}
+      {/* Creation is top-level + context-aware (acts in the selected folder / active note's folder /
+          root): "New folder" makes a container, "New note" a document, "New sub-note" a writable note
+          under the active note. No per-node ＋ clutters the tree. */}
       <div className="new-buttons">
         {onCreateFolder && (
           <button type="button" onClick={onCreateFolder} disabled={!canCreate}>
@@ -208,8 +239,13 @@ export function NoteList({
         <button type="button" onClick={onCreate} disabled={!canCreate}>
           New note
         </button>
+        {onCreateSubnote && (
+          <button type="button" onClick={onCreateSubnote} disabled={!canCreate}>
+            New sub-note
+          </button>
+        )}
       </div>
-      {[...buildTree(notes).children.values()]
+      {[...buildTree(notes, folders).children.values()]
         .sort((a, b) => (a.name < b.name ? -1 : 1))
         .map(renderNode)}
       {deleted.length > 0 && (

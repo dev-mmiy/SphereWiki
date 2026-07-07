@@ -127,6 +127,70 @@ export function NoteWorkspace({
   const [railOpen, setRailOpen] = useState(true)
   const clearDiff = () => setDiff(null)
 
+  // --- First-class Folders (📁 containers, distinct from notes) ---
+  // Non-empty folders come from note paths; EMPTY folders are tracked here + persisted to the
+  // `.spherewiki/` sidecar (via `durable`) so they survive a reload and travel with the vault.
+  const foldersKey = `spherewiki:folders:${WORKSPACE_ID}`
+  const [emptyFolders, setEmptyFolders] = useState<readonly string[]>(() => {
+    try {
+      const raw = durable.getItem(foldersKey)
+      const parsed: unknown = raw ? JSON.parse(raw) : []
+      return Array.isArray(parsed) ? parsed.filter((p): p is string => typeof p === "string") : []
+    } catch {
+      return []
+    }
+  })
+  useEffect(() => {
+    try {
+      durable.setItem(foldersKey, JSON.stringify(emptyFolders))
+    } catch {
+      // Best-effort (like the rest of the durable sidecar): if storage is unavailable, empty folders
+      // simply don't persist across a reload — non-empty folders still live in the note paths.
+    }
+  }, [durable, foldersKey, emptyFolders])
+  const [selectedFolder, setSelectedFolder] = useState<string | null>(null)
+  // Navigating to a NOTE (from the list, search, quick-switcher, a link, the graph, tags, ask…) clears
+  // the folder creation context — so a new note/folder lands where you're now looking, never in a
+  // stale folder. Selecting a folder doesn't change activeId, so the folder stays selected.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally re-runs on an activeId change to reset the context, though the body doesn't read it.
+  useEffect(() => {
+    setSelectedFolder(null)
+  }, [ws.activeId])
+  const activeNote = ws.notes.find((m) => m.id === ws.activeId)
+  // Creation is context-aware: new items land in the selected folder, else the active note's folder,
+  // else the vault root. A fresh title free of BOTH visible and trashed notes so create never
+  // resolves-by-title to, or restores, an existing note.
+  const contextFolder = selectedFolder ?? activeNote?.path ?? ""
+  const freshTitle = () => freshNoteTitle([...ws.notes, ...ws.deleted].map((m) => m.title))
+  const createFolderInContext = () => {
+    // Names already in use directly under contextFolder — so "New folder N" never silently reuses one:
+    // sibling empty folders, notes sitting here, AND non-empty subfolders (a note deeper down whose
+    // first segment below contextFolder is that subfolder's name).
+    const taken = new Set<string>(
+      emptyFolders
+        .filter((f) => (f.includes("/") ? f.slice(0, f.lastIndexOf("/")) : "") === contextFolder)
+        .map((f) => f.slice(f.lastIndexOf("/") + 1)),
+    )
+    for (const m of ws.notes) {
+      const p = m.path ?? ""
+      if (p === contextFolder) {
+        taken.add(m.name ?? m.title) // a note sitting directly in the context folder
+      } else if (contextFolder === "" ? p !== "" : p.startsWith(`${contextFolder}/`)) {
+        const rest = contextFolder === "" ? p : p.slice(contextFolder.length + 1)
+        taken.add(rest.split("/")[0] as string) // a non-empty subfolder's own name
+      }
+    }
+    let name = "New folder"
+    let n = 1
+    while (taken.has(name)) {
+      n += 1
+      name = `New folder ${n}`
+    }
+    const path = contextFolder ? `${contextFolder}/${name}` : name
+    setEmptyFolders((prev) => [...prev, path])
+    setSelectedFolder(path) // focus the new folder so the next create nests into it
+  }
+
   // Global keyboard shortcuts: Cmd/Ctrl-K jump-to-note, Cmd/Ctrl-B fold the sidebar (focus mode),
   // and "?" for the shortcut help. "?" is a bare key, so it stands down while the user is typing.
   useEffect(() => {
@@ -241,11 +305,14 @@ export function NoteWorkspace({
               onSelect={(id) => {
                 clearDiff()
                 setAiStatus(null)
-                ws.select(id)
+                ws.select(id) // clears the folder context via the activeId effect above
               }}
-              onCreate={() =>
-                ws.create(freshNoteTitle([...ws.notes, ...ws.deleted].map((m) => m.title)))
-              }
+              // "New note" — a document in the current context (selected folder / active note's folder).
+              onCreate={() => {
+                clearDiff()
+                setAiStatus(null)
+                ws.create(freshTitle(), contextFolder)
+              }}
               onDelete={(id) => {
                 clearDiff()
                 setAiStatus(null)
@@ -258,23 +325,27 @@ export function NoteWorkspace({
               }}
               {...(ws.canMove
                 ? {
+                    folders: emptyFolders,
+                    selectedFolder,
+                    onSelectFolder: (path: string) => {
+                      clearDiff()
+                      setSelectedFolder(path)
+                    },
                     onMove: (id: NoteId, folder: string) => {
                       ws.move(id, folder)
                     },
-                    onCreateFolder: () => {
-                      // "New folder" groups notes under the active note: create a child in its
-                      // `<path>/<name>` folder (the folder-note convention), so the active note
-                      // becomes a folder. A title free of BOTH visible and trashed notes so this always
-                      // CREATES (never resolves-by-title to, or restores, an existing note).
-                      const active = ws.notes.find((m) => m.id === ws.activeId)
-                      if (active?.name === undefined) return // needs the on-disk stem (file vault)
-                      const folder = active.path ? `${active.path}/${active.name}` : active.name
+                    // "New folder" — an empty 📁 container in the current context.
+                    onCreateFolder: createFolderInContext,
+                    // "New sub-note" — a writable child UNDER the active note (folder-note convention),
+                    // so the active note becomes a folder-parent.
+                    onCreateSubnote: () => {
+                      if (activeNote?.name === undefined) return // needs the on-disk stem (file vault)
+                      const folder = activeNote.path
+                        ? `${activeNote.path}/${activeNote.name}`
+                        : activeNote.name
                       clearDiff()
                       setAiStatus(null)
-                      ws.create(
-                        freshNoteTitle([...ws.notes, ...ws.deleted].map((m) => m.title)),
-                        folder,
-                      )
+                      ws.create(freshTitle(), folder)
                     },
                   }
                 : {})}
