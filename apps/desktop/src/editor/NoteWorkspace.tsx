@@ -25,6 +25,7 @@ import { LinksPanel } from "./links-panel"
 import { MetricsPanel } from "./metrics-panel"
 import { NoteEditor } from "./NoteEditor"
 import { NoteList } from "./note-list"
+import { freshNoteTitle } from "./note-title"
 import { QuickSwitcher } from "./quick-switcher"
 import { SearchPanel } from "./search-panel"
 import { ShortcutHelp } from "./shortcut-help"
@@ -242,7 +243,7 @@ export function NoteWorkspace({
                 setAiStatus(null)
                 ws.select(id)
               }}
-              onCreate={() => ws.create(`Note ${ws.notes.length + 1}`)}
+              onCreate={() => ws.create(freshNoteTitle(ws.notes.map((m) => m.title)))}
               onDelete={(id) => {
                 clearDiff()
                 setAiStatus(null)
@@ -261,7 +262,9 @@ export function NoteWorkspace({
                     onCreateInFolder: (folder: string) => {
                       clearDiff()
                       setAiStatus(null)
-                      ws.create(`Note ${ws.notes.length + 1}`, folder)
+                      // A guaranteed-unique title so this always CREATES a new note in `folder` —
+                      // never resolves-by-title to an existing note in a different folder.
+                      ws.create(freshNoteTitle(ws.notes.map((m) => m.title)), folder)
                     },
                   }
                 : {})}
