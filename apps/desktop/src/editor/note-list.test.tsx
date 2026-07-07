@@ -24,7 +24,7 @@ describe("NoteList — folder tree (v1b)", () => {
     expect(screen.queryByLabelText(/^Folder /)).toBeNull()
   })
 
-  it("groups notes by their path into (nested) collapsible folders, root notes at top", () => {
+  it("groups notes by path into (nested) collapsible folders; folders render BEFORE root notes", () => {
     render(
       <NoteList
         notes={[
@@ -48,6 +48,12 @@ describe("NoteList — folder tree (v1b)", () => {
     expect(within(workDetails).getByRole("button", { name: "Meeting" })).toBeTruthy()
     expect(within(workDetails).getByRole("button", { name: "Deep" })).toBeTruthy() // nested under work/
     expect(within(workDetails).queryByRole("button", { name: "Home" })).toBeNull()
+
+    // Folders-first (Finder/Obsidian convention): the "work" folder is positioned ABOVE the root
+    // "Home" note, so a newly-created folder never appears tacked onto the note above it.
+    const nav = screen.getByRole("navigation")
+    const homeButton = within(nav).getByRole("button", { name: "Home" })
+    expect(work.compareDocumentPosition(homeButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it("renames via an inline input (Enter commits the typed title) — works without window.prompt", () => {

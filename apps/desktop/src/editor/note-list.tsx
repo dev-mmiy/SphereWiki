@@ -140,12 +140,13 @@ export function NoteList({
     )
   }
 
-  // Render a folder node: its own notes first, then its subfolders (alphabetical) as collapsible
-  // groups — native <details> so it's keyboard-accessible and needs no React state. `folderPath` is
-  // the current node's "/"-joined path ("" at the root), used for the key and create-in-folder.
+  // Render a folder node: its subfolders FIRST (alphabetical, collapsible), then its own notes — the
+  // conventional file-tree order (Finder / Obsidian / VSCode). Folders-first keeps a newly-created
+  // folder pinned to the top of its level, so moving a note into a folder never makes that folder
+  // appear tacked onto whichever note happens to sit above it. Native <details> is keyboard-
+  // accessible and needs no React state. `folderPath` is the node's "/"-joined path ("" at the root).
   const renderNode = (node: FolderNode, folderPath: string): ReactNode => (
     <>
-      {node.notes.length > 0 && <ul>{node.notes.map(renderNote)}</ul>}
       {[...node.folders.entries()]
         .sort(([a], [b]) => (a.normalize("NFC") < b.normalize("NFC") ? -1 : 1))
         .map(([name, child]) => {
@@ -173,6 +174,7 @@ export function NoteList({
             </details>
           )
         })}
+      {node.notes.length > 0 && <ul>{node.notes.map(renderNote)}</ul>}
     </>
   )
 
