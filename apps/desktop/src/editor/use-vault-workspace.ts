@@ -695,6 +695,7 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
       const trashed = deletedList().find((m) => m.title === title)
       if (trashed) {
         registry.set(trashed.id, { title: trashed.title }, LOCAL) // un-tombstone (deleted omitted)
+        vault.restore?.(trashed.id) // move the `.md` back out of `.trash/` — mirror the explicit restore()
         setNotes(unionList())
         setDeleted(deletedList())
         setActiveId(trashed.id)
@@ -774,6 +775,9 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     (id: NoteId): void => {
       const title = registry.get(id)?.title ?? vault.list().find((m) => m.id === id)?.title ?? id
       registry.set(id, { title, deleted: true }, LOCAL)
+      // On-disk vaults also move the `.md` into `.trash/` (O2) so a Markdown-only `reindex` prunes
+      // its derived vector; a no-op for the in-memory/localStorage vaults (body retained in place).
+      vault.trash?.(id)
     },
     [registry, vault],
   )
@@ -781,6 +785,7 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     (id: NoteId): void => {
       const title = registry.get(id)?.title ?? vault.list().find((m) => m.id === id)?.title ?? id
       registry.set(id, { title, deleted: false }, LOCAL)
+      vault.restore?.(id)
     },
     [registry, vault],
   )

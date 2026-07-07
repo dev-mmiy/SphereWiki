@@ -45,6 +45,38 @@ const ids = (prefix: string): (() => string) => {
   return () => `${prefix}-${(++n).toString()}`
 }
 
+/** A trash-capable FsPort (models `<root>/.trash/`), as the Tauri adapter provides — vs plain
+ * `fakeFs`, which (like the reindex node adapter) has no trash capability. */
+function trashFake(store = new Map<string, string>(), root = "/w"): FsPort {
+  const base = fakeFs(store)
+  return {
+    ...base,
+    trash: async (name) => {
+      const value = store.get(`${root}/${name}`)
+      if (value === undefined) throw new Error(`ENOENT: ${name}`)
+      store.set(`${root}/.trash/${name}`, value)
+      store.delete(`${root}/${name}`)
+    },
+    untrash: async (name) => {
+      const value = store.get(`${root}/.trash/${name}`)
+      if (value === undefined) throw new Error(`ENOENT trash: ${name}`)
+      store.set(`${root}/${name}`, value)
+      store.delete(`${root}/.trash/${name}`)
+    },
+    listTrash: async () => {
+      const prefix = `${root}/.trash/`
+      return [...store.keys()]
+        .filter((k) => k.startsWith(prefix))
+        .map((k) => k.slice(prefix.length))
+    },
+    readTrash: async (name) => {
+      const value = store.get(`${root}/.trash/${name}`)
+      if (value === undefined) throw new Error(`ENOENT trash: ${name}`)
+      return value
+    },
+  }
+}
+
 // The shared 6-method contract, proven against the file impl (memory + localStorage prove it too).
 runVaultContract("file vault", async (seed) => {
   const { vault, whenLoaded } = createFileBackedVault({ fs: fakeFs(), root: "/vault", seed })
@@ -179,6 +211,102 @@ describe("file-backed vault — on-disk specifics", () => {
     await whenLoaded
     expect(vault.list().map((m) => m.title)).toEqual(["Live"])
     expect(() => vault.read(asNoteId("del-1"))).toThrow(/unknown note/) // trash not resurrected
+  })
+
+  it("soft-delete moves the .md into .trash/ (readable + in list), and restore moves it back", async () => {
+    const store = new Map<string, string>()
+    const first = createFileBackedVault({ fs: trashFake(store), root: "/w", newId: ids("id") })
+    await first.whenLoaded
+    const note = first.vault.create("Doomed", "# Doomed\n")
+    await first.flush()
+    expect(store.has("/w/Doomed.md")).toBe(true)
+
+    first.vault.trash?.(note.id)
+    await first.flush()
+    expect(store.has("/w/Doomed.md")).toBe(false) // moved out of the vault root
+    expect(store.has("/w/.trash/Doomed.md")).toBe(true) // into .trash/
+    expect(first.vault.read(note.id)).toContain("# Doomed") // still readable in-session
+    expect(first.vault.list().some((m) => m.id === note.id)).toBe(true) // still in list() (caller partitions)
+
+    // Reload: the trashed note loads from .trash/ (survives the reload, still restorable).
+    const second = createFileBackedVault({ fs: trashFake(store), root: "/w", newId: ids("z") })
+    await second.whenLoaded
+    expect(second.vault.read(note.id)).toContain("# Doomed")
+    second.vault.restore?.(note.id)
+    await second.flush()
+    expect(store.has("/w/Doomed.md")).toBe(true) // back at the root
+    expect(store.has("/w/.trash/Doomed.md")).toBe(false)
+  })
+
+  it("writing a note whose trashed flag is stale heals it (moves back out of .trash/, no lost edit)", async () => {
+    // Reproduces the two-source-of-truth hazard: a note is displayed live (registry says so) but its
+    // mirror entry is still `trashed` (a failed/not-yet-flushed untrash, or a create-by-title
+    // restore). A write must NOT be silently dropped — it moves the file back and persists.
+    const store = new Map<string, string>()
+    const first = createFileBackedVault({ fs: trashFake(store), root: "/w", newId: ids("id") })
+    await first.whenLoaded
+    const note = first.vault.create("N", "# N\n")
+    await first.flush()
+    first.vault.trash?.(note.id)
+    await first.flush()
+    expect(store.has("/w/.trash/N.md")).toBe(true)
+
+    // The note is treated as live again + edited (trashed flag still set on the entry).
+    first.vault.write(note.id, `${first.vault.read(note.id)}\n\nrevived edit`)
+    await first.flush()
+    expect(store.has("/w/N.md")).toBe(true) // healed: moved back out of .trash/
+    expect(store.has("/w/.trash/N.md")).toBe(false)
+    expect(store.get("/w/N.md")).toContain("revived edit") // the edit persisted (not dropped)
+
+    // Reload confirms the note is live with the edit, not stuck in trash.
+    const second = createFileBackedVault({ fs: trashFake(store), root: "/w", newId: ids("z") })
+    await second.whenLoaded
+    expect(second.vault.read(note.id)).toContain("revived edit")
+  })
+
+  it("does NOT re-seed a vault whose notes were all deleted (trashed notes stay restorable)", async () => {
+    const store = new Map<string, string>()
+    const first = createFileBackedVault({
+      fs: trashFake(store),
+      root: "/w",
+      seed: [{ title: "Home", body: "# Home\n" }],
+      newId: ids("id"),
+    })
+    await first.whenLoaded // seeds Home
+    const [home] = first.vault.list()
+    if (home === undefined) throw new Error("expected the seed note")
+    await first.flush()
+    first.vault.trash?.(home.id) // delete the only note -> root empty, .trash/ has Home
+    await first.flush()
+
+    // Reload: the root is empty but `.trash/` is not — must NOT re-seed (which would shadow Home).
+    const second = createFileBackedVault({
+      fs: trashFake(store),
+      root: "/w",
+      seed: [{ title: "Home", body: "# Home\n" }],
+      newId: ids("z"),
+    })
+    await second.whenLoaded
+    expect(second.vault.list().map((m) => m.id)).toEqual([home.id]) // the trashed Home, not a fresh seed
+    expect(second.vault.read(home.id)).toContain("# Home") // still restorable
+  })
+
+  it("a reindex-style vault (no trash capability) does NOT see trashed notes — so their vectors prune", async () => {
+    const store = new Map<string, string>()
+    const app = createFileBackedVault({ fs: trashFake(store), root: "/w", newId: ids("id") })
+    await app.whenLoaded
+    const live = app.vault.create("Live", "# Live\n")
+    const gone = app.vault.create("Gone", "# Gone\n")
+    await app.flush()
+    app.vault.trash?.(gone.id)
+    await app.flush()
+
+    // The reindex adapter (plain fakeFs — no listTrash/readTrash) loads ONLY the vault root.
+    const reindex = createFileBackedVault({ fs: fakeFs(store), root: "/w", newId: ids("r") })
+    await reindex.whenLoaded
+    const ids2 = reindex.vault.list().map((m) => m.id)
+    expect(ids2).toContain(live.id)
+    expect(ids2).not.toContain(gone.id) // trashed .md is under .trash/ → excluded → reindex prunes it
   })
 
   it("vaultSlug keeps spaces, strips fs-illegal chars, and never yields an empty stem", () => {

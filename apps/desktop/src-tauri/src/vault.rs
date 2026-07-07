@@ -111,6 +111,64 @@ pub fn vault_rename_file(
   fs::rename(root.join(&from), root.join(&to)).map_err(|e| e.to_string())
 }
 
+/// Soft-delete on disk: move a note's `.md` into the vault-root `.trash/` (dot-prefixed, so the
+/// `*.md` scan + `reindex` skip it). The body is retained + restorable; `reindex` then prunes the
+/// note's derived vector because it no longer appears in the live vault listing (O2).
+#[tauri::command]
+pub fn vault_trash_file(
+  app: tauri::AppHandle,
+  workspace: String,
+  name: String,
+) -> Result<(), String> {
+  safe_name(&name)?;
+  let root = vault_root(&app, &workspace)?;
+  let trash = root.join(".trash");
+  fs::create_dir_all(&trash).map_err(|e| e.to_string())?;
+  fs::rename(root.join(&name), trash.join(&name)).map_err(|e| e.to_string())
+}
+
+/// Restore a soft-deleted note: move it back out of `.trash/` to the vault root.
+#[tauri::command]
+pub fn vault_untrash_file(
+  app: tauri::AppHandle,
+  workspace: String,
+  name: String,
+) -> Result<(), String> {
+  safe_name(&name)?;
+  let root = vault_root(&app, &workspace)?;
+  fs::rename(root.join(".trash").join(&name), root.join(&name)).map_err(|e| e.to_string())
+}
+
+/// List the note file names currently in `.trash/` (so the app can load trashed bodies — kept
+/// restorable across a reload). Empty when there is no `.trash/` yet.
+#[tauri::command]
+pub fn vault_list_trash(app: tauri::AppHandle, workspace: String) -> Result<Vec<String>, String> {
+  let trash = vault_root(&app, &workspace)?.join(".trash");
+  if !trash.exists() {
+    return Ok(Vec::new());
+  }
+  let mut names = Vec::new();
+  for entry in fs::read_dir(&trash).map_err(|e| e.to_string())? {
+    let entry = entry.map_err(|e| e.to_string())?;
+    if let Some(name) = entry.file_name().to_str() {
+      names.push(name.to_string());
+    }
+  }
+  Ok(names)
+}
+
+/// Read a trashed note file's content (verbatim UTF-8).
+#[tauri::command]
+pub fn vault_read_trash(
+  app: tauri::AppHandle,
+  workspace: String,
+  name: String,
+) -> Result<String, String> {
+  safe_name(&name)?;
+  let path = vault_root(&app, &workspace)?.join(".trash").join(&name);
+  fs::read_to_string(&path).map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
   use super::{safe_name, valid_workspace};

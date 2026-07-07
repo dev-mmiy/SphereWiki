@@ -30,4 +30,13 @@ export interface Vault {
    * so opening it never throws on an unknown id and never clobbers local content.
    */
   ensure(id: NoteId, title: string, body?: string): NoteMeta
+  /**
+   * Optional soft-delete-on-disk hooks (O2). A file-backed vault moves the note's `.md` into a
+   * `.trash/` folder (excluded from the Markdown scan / `reindex`, so the derived vector is pruned)
+   * and back on restore; the body stays readable + the note stays in `list()` (the caller partitions
+   * live vs trash by its own tombstone). The in-memory / localStorage vaults leave these undefined —
+   * their soft-delete is the registry tombstone alone, with the body retained in place.
+   */
+  trash?(id: NoteId): void
+  restore?(id: NoteId): void
 }

@@ -20,6 +20,16 @@ export interface FsPort {
   rename(from: string, to: string): Promise<void>
   /** Create `dir` (recursive); no-op if it already exists. */
   mkdir(dir: string): Promise<void>
+  /**
+   * Optional soft-delete-on-disk ops (O2). When an adapter provides them, the vault moves a
+   * deleted note's file into a `.trash/` subdir (kept restorable), and **loads existing trashed
+   * files on hydrate** so the trash survives a reload — while a Markdown-only `reindex` (an adapter
+   * WITHOUT these) never sees them, so it prunes the derived vector. All take the bare filename.
+   */
+  trash?(name: string): Promise<void>
+  untrash?(name: string): Promise<void>
+  listTrash?(): Promise<readonly string[]>
+  readTrash?(name: string): Promise<string>
 }
 
 export interface FileVaultOptions {
@@ -147,6 +157,9 @@ export function createFileBackedVault(options: FileVaultOptions): FileBackedVaul
     source: string
     /** The exact on-disk filename (as read from / written to the fs — may be NFD on macOS). */
     filename: string
+    /** True while the note's file lives in `.trash/` (soft-deleted on disk, O2). Still in the mirror
+     * (readable + in `list()`); the caller partitions live vs trash by its own tombstone. */
+    trashed?: boolean
   }
   const notes = new Map<NoteId, Entry>()
   /** Lowercased NFC filenames in use, for case-insensitive collision resolution (macOS APFS). */
@@ -227,6 +240,39 @@ export function createFileBackedVault(options: FileVaultOptions): FileBackedVaul
     }
     for (const wb of writebacks) await fs.writeFile(join(root, wb.name), wb.content)
 
+    // Load already-trashed notes (O2) so the trash survives a reload — only when the adapter exposes
+    // trash reads (the Tauri app does; the `reindex` node adapter does NOT, so a rebuild-from-Markdown
+    // never sees trashed files and prunes their derived vectors). Trashed entries are in the mirror
+    // (readable, in `list()`) but flagged, so `trash`/`restore` know the file is under `.trash/`.
+    // Loaded BEFORE the seed decision so an all-deleted vault (empty root, non-empty `.trash/`) is not
+    // mistaken for a genuinely-empty first run and re-seeded (which would orphan its trashed notes).
+    if (fs.listTrash !== undefined && fs.readTrash !== undefined) {
+      const readTrash = fs.readTrash
+      const trashNames = ((await fs.listTrash()) ?? [])
+        .filter((n) => n.endsWith(MD) && !n.startsWith("."))
+        .sort((a, b) => (a.normalize("NFC") < b.normalize("NFC") ? -1 : 1))
+      for (const raw of trashNames) {
+        const key = nameKey(raw)
+        if (usedNames.has(key)) continue // a live file already owns this name
+        const source = await readTrash(raw)
+        const fm = parseNote(source).frontmatter
+        const id = typeof fm.id === "string" ? fm.id.trim() : ""
+        if (id === "" || notes.has(asNoteId(id))) continue // trashed files carry an id; skip dup/idless
+        const title =
+          typeof fm.title === "string" && fm.title !== ""
+            ? fm.title
+            : raw.normalize("NFC").slice(0, -MD.length)
+        notes.set(asNoteId(id), {
+          meta: { id: asNoteId(id), title },
+          source,
+          filename: raw,
+          trashed: true,
+        })
+        usedNames.add(key)
+      }
+    }
+
+    // Seed only a genuinely-empty vault — empty of BOTH live AND trashed notes (see above).
     if (notes.size === 0 && seed.length > 0) {
       for (const entry of seed) {
         const created = putNew(asNoteId(newId()), entry.title, entry.body)
@@ -244,7 +290,20 @@ export function createFileBackedVault(options: FileVaultOptions): FileBackedVaul
     write: (id, body) => {
       const entry = mustGet(id)
       entry.source = body // verbatim — byte-exact persistence (id/title ride in the caller's body)
-      enqueue(() => fs.writeFile(join(root, entry.filename), body))
+      if (entry.trashed === true && fs.untrash !== undefined) {
+        // A write means the app is treating this note as LIVE (it never edits a trashed note — the
+        // active-note guard excludes tombstoned ids). So `trashed` is STALE (a create-by-title
+        // restore, or a failed/not-yet-flushed untrash): heal it — move the file back out of
+        // `.trash/` and persist there, so the edit is never silently dropped (a data-safety fix).
+        entry.trashed = false
+        const untrash = fs.untrash
+        enqueue(async () => {
+          await untrash(entry.filename).catch(() => {}) // best-effort; the write below still persists
+          await fs.writeFile(join(root, entry.filename), body)
+        })
+      } else {
+        enqueue(() => fs.writeFile(join(root, entry.filename), body))
+      }
     },
     create: (title, body = "") => {
       const entry = putNew(asNoteId(newId()), title, body)
@@ -270,6 +329,24 @@ export function createFileBackedVault(options: FileVaultOptions): FileBackedVaul
         if (filename !== oldName) await fs.rename(join(root, oldName), join(root, filename))
         await fs.writeFile(join(root, filename), source)
       })
+    },
+    // Soft-delete on disk (O2): move the note's file into `.trash/` (kept in the mirror + readable,
+    // so the Trash UI + restore work; a Markdown-only `reindex` no longer lists it → prunes its
+    // vector). No-op without the trash capability (e.g. the reindex adapter) or on an unknown/
+    // already-trashed note.
+    trash: (id) => {
+      const entry = notes.get(id)
+      if (entry === undefined || entry.trashed === true || fs.trash === undefined) return
+      entry.trashed = true
+      const move = fs.trash
+      enqueue(() => move(entry.filename))
+    },
+    restore: (id) => {
+      const entry = notes.get(id)
+      if (entry === undefined || entry.trashed !== true || fs.untrash === undefined) return
+      entry.trashed = false
+      const move = fs.untrash
+      enqueue(() => move(entry.filename))
     },
   }
 

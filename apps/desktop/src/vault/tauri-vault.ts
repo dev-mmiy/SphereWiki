@@ -21,6 +21,11 @@ export function createTauriFsPort(workspace: string, invoke: Invoke): FsPort {
       invoke<void>("vault_rename_file", { workspace, from: basename(from), to: basename(to) }),
     // The Rust side `create_dir_all`s on write, so the dir is materialized lazily — nothing to do.
     mkdir: async () => {},
+    // Soft-delete on disk (O2): the Rust commands move the file to/from a vault-root `.trash/`.
+    trash: (name) => invoke<void>("vault_trash_file", { workspace, name: basename(name) }),
+    untrash: (name) => invoke<void>("vault_untrash_file", { workspace, name: basename(name) }),
+    listTrash: () => invoke<string[]>("vault_list_trash", { workspace }),
+    readTrash: (name) => invoke<string>("vault_read_trash", { workspace, name: basename(name) }),
   }
 }
 

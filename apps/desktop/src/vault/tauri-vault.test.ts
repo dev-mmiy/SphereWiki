@@ -70,6 +70,8 @@ function fakeRustBackend(): { invoke: Invoke; files: Map<string, Map<string, str
         d.delete(a.from as string)
         return undefined
       }
+      case "vault_list_trash":
+        return [] // these tests exercise no trash; hydrate just needs an empty list
       default:
         throw new Error(`unknown command: ${cmd}`)
     }
@@ -119,6 +121,7 @@ describe("Tauri file vault (adapter + core over a simulated Rust backend)", () =
   it("surfaces a Rust write failure via onWriteError (not silently swallowed)", async () => {
     const invoke = (async (cmd: string) => {
       if (cmd === "vault_list_files") return []
+      if (cmd === "vault_list_trash") return []
       if (cmd === "vault_write_file") throw new Error("EIO (disk)")
       return undefined
     }) as Invoke
