@@ -5,38 +5,41 @@ import { runVaultContract } from "./contract"
 import { createFileBackedVault, type FsPort, vaultSlug } from "./file"
 
 /**
- * An in-memory FsPort keyed by full path — byte-exact, so it exercises the mapping / hydration /
- * write-through / collision logic deterministically (a real disk isn't needed for those). The same
- * `store` Map outlives a vault instance, so re-opening over it models a reload. `readFile` is
- * exact-match, so NFC/NFD tests read via the on-disk name the code was handed (as a real fs would).
+ * An in-memory FsPort. The `store` is keyed by FULL path (`<root>/<relpath>`) so a real fs's byte
+ * layout is mirrored exactly, but the FsPort methods take **root-relative** paths (the core's
+ * contract), joining `root` internally — as the Tauri/node adapters do. `listFiles` returns every
+ * `.md` under root, subfolders included, dot-segments (`.trash/`, `.spherewiki/`) excluded — the
+ * recursive walk the real adapters implement. The same `store` outlives a vault, so re-opening over
+ * it models a reload; `readFile` is exact-match, so NFC/NFD tests read the on-disk name as given.
  */
-function fakeFs(store = new Map<string, string>()): FsPort & { store: Map<string, string> } {
-  const dirOf = (dir: string) => (dir.endsWith("/") ? dir : `${dir}/`)
+function fakeFs(
+  store = new Map<string, string>(),
+  root = "/w",
+): FsPort & { store: Map<string, string> } {
+  const abs = (rel: string) => `${root}/${rel}`
   return {
     store,
-    readdir: async (dir) => {
-      const prefix = dirOf(dir)
-      const names = new Set<string>()
-      for (const path of store.keys()) {
-        if (path.startsWith(prefix)) names.add(path.slice(prefix.length).split("/")[0] as string)
-      }
-      return [...names]
+    listFiles: async () => {
+      const prefix = `${root}/`
+      return [...store.keys()]
+        .filter((k) => k.startsWith(prefix))
+        .map((k) => k.slice(prefix.length))
+        .filter((p) => p.endsWith(".md") && !p.split("/").some((s) => s.startsWith(".")))
     },
-    readFile: async (path) => {
-      const value = store.get(path)
-      if (value === undefined) throw new Error(`ENOENT: ${path}`)
+    readFile: async (rel) => {
+      const value = store.get(abs(rel))
+      if (value === undefined) throw new Error(`ENOENT: ${rel}`)
       return value
     },
-    writeFile: async (path, content) => {
-      store.set(path, content)
+    writeFile: async (rel, content) => {
+      store.set(abs(rel), content)
     },
     rename: async (from, to) => {
-      const value = store.get(from)
+      const value = store.get(abs(from))
       if (value === undefined) throw new Error(`ENOENT: ${from}`)
-      store.set(to, value)
-      store.delete(from)
+      store.set(abs(to), value)
+      store.delete(abs(from))
     },
-    mkdir: async () => {},
   }
 }
 
@@ -45,23 +48,24 @@ const ids = (prefix: string): (() => string) => {
   return () => `${prefix}-${(++n).toString()}`
 }
 
-/** A trash-capable FsPort (models `<root>/.trash/`), as the Tauri adapter provides — vs plain
- * `fakeFs`, which (like the reindex node adapter) has no trash capability. */
+/** A trash-capable FsPort (models a `<root>/.trash/` area in the same store), as the Tauri adapter
+ * provides — vs plain `fakeFs`, which (like the reindex node adapter) has no trash capability. Paths
+ * are root-relative, so a trashed note preserves its subpath under `.trash/`. */
 function trashFake(store = new Map<string, string>(), root = "/w"): FsPort {
-  const base = fakeFs(store)
+  const trashAbs = (rel: string) => `${root}/.trash/${rel}`
   return {
-    ...base,
-    trash: async (name) => {
-      const value = store.get(`${root}/${name}`)
-      if (value === undefined) throw new Error(`ENOENT: ${name}`)
-      store.set(`${root}/.trash/${name}`, value)
-      store.delete(`${root}/${name}`)
+    ...fakeFs(store, root),
+    trash: async (rel) => {
+      const value = store.get(`${root}/${rel}`)
+      if (value === undefined) throw new Error(`ENOENT: ${rel}`)
+      store.set(trashAbs(rel), value)
+      store.delete(`${root}/${rel}`)
     },
-    untrash: async (name) => {
-      const value = store.get(`${root}/.trash/${name}`)
-      if (value === undefined) throw new Error(`ENOENT trash: ${name}`)
-      store.set(`${root}/${name}`, value)
-      store.delete(`${root}/.trash/${name}`)
+    untrash: async (rel) => {
+      const value = store.get(trashAbs(rel))
+      if (value === undefined) throw new Error(`ENOENT trash: ${rel}`)
+      store.set(`${root}/${rel}`, value)
+      store.delete(trashAbs(rel))
     },
     listTrash: async () => {
       const prefix = `${root}/.trash/`
@@ -69,9 +73,9 @@ function trashFake(store = new Map<string, string>(), root = "/w"): FsPort {
         .filter((k) => k.startsWith(prefix))
         .map((k) => k.slice(prefix.length))
     },
-    readTrash: async (name) => {
-      const value = store.get(`${root}/.trash/${name}`)
-      if (value === undefined) throw new Error(`ENOENT trash: ${name}`)
+    readTrash: async (rel) => {
+      const value = store.get(trashAbs(rel))
+      if (value === undefined) throw new Error(`ENOENT trash: ${rel}`)
       return value
     },
   }
@@ -79,7 +83,7 @@ function trashFake(store = new Map<string, string>(), root = "/w"): FsPort {
 
 // The shared 6-method contract, proven against the file impl (memory + localStorage prove it too).
 runVaultContract("file vault", async (seed) => {
-  const { vault, whenLoaded } = createFileBackedVault({ fs: fakeFs(), root: "/vault", seed })
+  const { vault, whenLoaded } = createFileBackedVault({ fs: fakeFs(), seed })
   await whenLoaded
   return vault
 })
@@ -88,7 +92,7 @@ describe("file-backed vault — on-disk specifics", () => {
   it("persists note bodies byte-for-byte and puts id + title in frontmatter", async () => {
     const fs = fakeFs()
     const body = "# 日本語\r\nno trailing newline and a --- rule" // CRLF, multibyte, no final \n
-    const { vault, flush } = createFileBackedVault({ fs, root: "/w", newId: ids("id") })
+    const { vault, flush } = createFileBackedVault({ fs, newId: ids("id") })
     const meta = vault.create("メモ", body)
     await flush()
 
@@ -104,7 +108,7 @@ describe("file-backed vault — on-disk specifics", () => {
 
   it("reloads the note list + bodies from disk with no server (a reload)", async () => {
     const fs = fakeFs()
-    const first = createFileBackedVault({ fs, root: "/w", newId: ids("a") })
+    const first = createFileBackedVault({ fs, newId: ids("a") })
     const home = first.vault.create("Home", "# Home\n[[Ideas]]")
     first.vault.create("Ideas", "# Ideas\n")
     // Realistic edit: the editor round-trips the whole source (frontmatter incl.), so the id rides
@@ -113,7 +117,7 @@ describe("file-backed vault — on-disk specifics", () => {
     await first.flush()
 
     // A fresh instance over the same store = reopening the app offline.
-    const second = createFileBackedVault({ fs, root: "/w", newId: ids("b") })
+    const second = createFileBackedVault({ fs, newId: ids("b") })
     await second.whenLoaded
     expect(
       second.vault
@@ -126,7 +130,7 @@ describe("file-backed vault — on-disk specifics", () => {
 
   it("keeps the id stable across a rename while repointing the filename", async () => {
     const fs = fakeFs()
-    const { vault, flush } = createFileBackedVault({ fs, root: "/w", newId: ids("id") })
+    const { vault, flush } = createFileBackedVault({ fs, newId: ids("id") })
     const note = vault.create("Draft", "# Draft\n")
     await flush()
     vault.rename(note.id, "Final")
@@ -141,14 +145,14 @@ describe("file-backed vault — on-disk specifics", () => {
 
     // The id still resolves, and a reload recovers the same id from the frontmatter.
     expect(vault.read(note.id)).toBe(renamed)
-    const reopened = createFileBackedVault({ fs, root: "/w", newId: ids("z") })
+    const reopened = createFileBackedVault({ fs, newId: ids("z") })
     await reopened.whenLoaded
     expect(reopened.vault.read(note.id)).toContain("title: Final")
   })
 
   it("resolves same-title filename collisions (case-insensitively, APFS-style)", async () => {
     const fs = fakeFs()
-    const { vault, flush } = createFileBackedVault({ fs, root: "/w", newId: ids("id") })
+    const { vault, flush } = createFileBackedVault({ fs, newId: ids("id") })
     vault.create("Note", "one")
     vault.create("note", "two") // differs only in case — APFS would collide
     vault.create("Note", "three")
@@ -162,7 +166,7 @@ describe("file-backed vault — on-disk specifics", () => {
   it("NFC-normalizes a decomposed (NFD) filename on read", async () => {
     const nfd = "café.md" // "café.md" written decomposed, as macOS readdir returns it
     const store = new Map<string, string>([[`/w/${nfd}`, "# cafe\n"]])
-    const { vault, whenLoaded } = createFileBackedVault({ fs: fakeFs(store), root: "/w" })
+    const { vault, whenLoaded } = createFileBackedVault({ fs: fakeFs(store) })
     await whenLoaded
     const [only] = vault.list()
     if (only === undefined) throw new Error("expected the note")
@@ -172,7 +176,7 @@ describe("file-backed vault — on-disk specifics", () => {
 
   it("self-heals a file with no id by minting and writing one back", async () => {
     const fs = fakeFs(new Map([["/w/Orphan.md", "# Orphan\n\nexternally created\n"]]))
-    const first = createFileBackedVault({ fs, root: "/w", newId: ids("heal") })
+    const first = createFileBackedVault({ fs, newId: ids("heal") })
     await first.whenLoaded
     await first.flush()
 
@@ -182,7 +186,7 @@ describe("file-backed vault — on-disk specifics", () => {
     expect(parseNote(healed).body).toBe("# Orphan\n\nexternally created\n") // body preserved
 
     // Reopening recovers the SAME id (stable), not a new one.
-    const second = createFileBackedVault({ fs, root: "/w", newId: ids("other") })
+    const second = createFileBackedVault({ fs, newId: ids("other") })
     await second.whenLoaded
     const [note] = second.vault.list()
     expect(note?.id).toBe(asNoteId("heal-1"))
@@ -192,7 +196,6 @@ describe("file-backed vault — on-disk specifics", () => {
     const fs = fakeFs(new Map([["/w/Existing.md", "---\nid: keep-1\n---\n# Existing\n"]]))
     const { vault, whenLoaded } = createFileBackedVault({
       fs,
-      root: "/w",
       seed: [{ title: "Seed", body: "# Seed\n" }],
     })
     await whenLoaded
@@ -207,7 +210,7 @@ describe("file-backed vault — on-disk specifics", () => {
         ["/w/.spherewiki/history.json", "{}"],
       ]),
     )
-    const { vault, whenLoaded } = createFileBackedVault({ fs, root: "/w" })
+    const { vault, whenLoaded } = createFileBackedVault({ fs })
     await whenLoaded
     expect(vault.list().map((m) => m.title)).toEqual(["Live"])
     expect(() => vault.read(asNoteId("del-1"))).toThrow(/unknown note/) // trash not resurrected
@@ -215,7 +218,7 @@ describe("file-backed vault — on-disk specifics", () => {
 
   it("soft-delete moves the .md into .trash/ (readable + in list), and restore moves it back", async () => {
     const store = new Map<string, string>()
-    const first = createFileBackedVault({ fs: trashFake(store), root: "/w", newId: ids("id") })
+    const first = createFileBackedVault({ fs: trashFake(store), newId: ids("id") })
     await first.whenLoaded
     const note = first.vault.create("Doomed", "# Doomed\n")
     await first.flush()
@@ -229,7 +232,7 @@ describe("file-backed vault — on-disk specifics", () => {
     expect(first.vault.list().some((m) => m.id === note.id)).toBe(true) // still in list() (caller partitions)
 
     // Reload: the trashed note loads from .trash/ (survives the reload, still restorable).
-    const second = createFileBackedVault({ fs: trashFake(store), root: "/w", newId: ids("z") })
+    const second = createFileBackedVault({ fs: trashFake(store), newId: ids("z") })
     await second.whenLoaded
     expect(second.vault.read(note.id)).toContain("# Doomed")
     second.vault.restore?.(note.id)
@@ -243,7 +246,7 @@ describe("file-backed vault — on-disk specifics", () => {
     // mirror entry is still `trashed` (a failed/not-yet-flushed untrash, or a create-by-title
     // restore). A write must NOT be silently dropped — it moves the file back and persists.
     const store = new Map<string, string>()
-    const first = createFileBackedVault({ fs: trashFake(store), root: "/w", newId: ids("id") })
+    const first = createFileBackedVault({ fs: trashFake(store), newId: ids("id") })
     await first.whenLoaded
     const note = first.vault.create("N", "# N\n")
     await first.flush()
@@ -259,7 +262,7 @@ describe("file-backed vault — on-disk specifics", () => {
     expect(store.get("/w/N.md")).toContain("revived edit") // the edit persisted (not dropped)
 
     // Reload confirms the note is live with the edit, not stuck in trash.
-    const second = createFileBackedVault({ fs: trashFake(store), root: "/w", newId: ids("z") })
+    const second = createFileBackedVault({ fs: trashFake(store), newId: ids("z") })
     await second.whenLoaded
     expect(second.vault.read(note.id)).toContain("revived edit")
   })
@@ -268,7 +271,6 @@ describe("file-backed vault — on-disk specifics", () => {
     const store = new Map<string, string>()
     const first = createFileBackedVault({
       fs: trashFake(store),
-      root: "/w",
       seed: [{ title: "Home", body: "# Home\n" }],
       newId: ids("id"),
     })
@@ -282,7 +284,6 @@ describe("file-backed vault — on-disk specifics", () => {
     // Reload: the root is empty but `.trash/` is not — must NOT re-seed (which would shadow Home).
     const second = createFileBackedVault({
       fs: trashFake(store),
-      root: "/w",
       seed: [{ title: "Home", body: "# Home\n" }],
       newId: ids("z"),
     })
@@ -293,7 +294,7 @@ describe("file-backed vault — on-disk specifics", () => {
 
   it("a reindex-style vault (no trash capability) does NOT see trashed notes — so their vectors prune", async () => {
     const store = new Map<string, string>()
-    const app = createFileBackedVault({ fs: trashFake(store), root: "/w", newId: ids("id") })
+    const app = createFileBackedVault({ fs: trashFake(store), newId: ids("id") })
     await app.whenLoaded
     const live = app.vault.create("Live", "# Live\n")
     const gone = app.vault.create("Gone", "# Gone\n")
@@ -302,11 +303,73 @@ describe("file-backed vault — on-disk specifics", () => {
     await app.flush()
 
     // The reindex adapter (plain fakeFs — no listTrash/readTrash) loads ONLY the vault root.
-    const reindex = createFileBackedVault({ fs: fakeFs(store), root: "/w", newId: ids("r") })
+    const reindex = createFileBackedVault({ fs: fakeFs(store), newId: ids("r") })
     await reindex.whenLoaded
     const ids2 = reindex.vault.list().map((m) => m.id)
     expect(ids2).toContain(live.id)
     expect(ids2).not.toContain(gone.id) // trashed .md is under .trash/ → excluded → reindex prunes it
+  })
+
+  it("reads notes from subfolders (title fallback is the basename) and links are folder-transparent", async () => {
+    const store = new Map<string, string>([
+      ["/w/work/Meeting.md", "---\nid: m1\ntitle: Team Meeting\n---\n# Meeting\n[[Ideas]]\n"],
+      ["/w/projects/deep/Untitled.md", "---\nid: u1\n---\n# no title in frontmatter\n"], // no title
+      ["/w/Ideas.md", "---\nid: i1\ntitle: Ideas\n---\n# Ideas\n"],
+    ])
+    const v = createFileBackedVault({ fs: fakeFs(store), newId: ids("x") })
+    await v.whenLoaded
+    // Subfolder notes load; the title is the frontmatter title, else the BASENAME (not the path).
+    expect(
+      v.vault
+        .list()
+        .map((m) => m.title)
+        .sort(),
+    ).toEqual(["Ideas", "Team Meeting", "Untitled"])
+    const meeting = v.vault.list().find((m) => m.title === "Team Meeting")
+    if (meeting === undefined) throw new Error("expected the subfolder note")
+    expect(v.vault.read(meeting.id)).toContain("[[Ideas]]") // its wikilink is intact regardless of folder
+  })
+
+  it("keeps a renamed note in its own folder (only the basename slug changes)", async () => {
+    const store = new Map<string, string>([
+      ["/w/work/Meeting.md", "---\nid: m1\ntitle: Meeting\n---\n# Meeting\n"],
+    ])
+    const { vault, whenLoaded, flush } = createFileBackedVault({
+      fs: fakeFs(store),
+      newId: ids("x"),
+    })
+    await whenLoaded
+    const [meeting] = vault.list()
+    if (meeting === undefined) throw new Error("expected the note")
+    vault.rename(meeting.id, "Standup")
+    await flush()
+    expect(store.has("/w/work/Meeting.md")).toBe(false) // old path gone
+    expect(store.has("/w/work/Standup.md")).toBe(true) // renamed WITHIN work/, not moved to root
+    expect(store.has("/w/Standup.md")).toBe(false)
+    expect(parseNote(store.get("/w/work/Standup.md") ?? "").frontmatter.id).toBe("m1") // id stable
+  })
+
+  it("soft-deletes a subfolder note into .trash/ preserving its subpath, and restores it there", async () => {
+    const store = new Map<string, string>([
+      ["/w/work/Doomed.md", "---\nid: d1\ntitle: Doomed\n---\n# Doomed\n"],
+    ])
+    const first = createFileBackedVault({ fs: trashFake(store), newId: ids("x") })
+    await first.whenLoaded
+    const [note] = first.vault.list()
+    if (note === undefined) throw new Error("expected the note")
+    first.vault.trash?.(note.id)
+    await first.flush()
+    expect(store.has("/w/work/Doomed.md")).toBe(false)
+    expect(store.has("/w/.trash/work/Doomed.md")).toBe(true) // subpath preserved under .trash/
+
+    // Reload keeps it restorable; restore returns it to its ORIGINAL folder.
+    const second = createFileBackedVault({ fs: trashFake(store), newId: ids("z") })
+    await second.whenLoaded
+    expect(second.vault.read(note.id)).toContain("# Doomed")
+    second.vault.restore?.(note.id)
+    await second.flush()
+    expect(store.has("/w/work/Doomed.md")).toBe(true) // back in work/, not at root
+    expect(store.has("/w/.trash/work/Doomed.md")).toBe(false)
   })
 
   it("vaultSlug keeps spaces, strips fs-illegal chars, and never yields an empty stem", () => {
@@ -337,7 +400,6 @@ describe("file-backed vault — on-disk specifics", () => {
     }
     const { vault, flush } = createFileBackedVault({
       fs,
-      root: "/w",
       newId: ids("id"),
       onWriteError: (e) => errors.push(e),
     })
@@ -356,7 +418,7 @@ describe("file-backed vault — on-disk specifics", () => {
     // A leading `---…---` region that is NOT a YAML mapping (a plain-scalar paragraph) — `doc.set`
     // would throw on it; upsertFrontmatter must treat it as body and prepend a fresh block.
     const body = "---\njust a thematic-break paragraph, not frontmatter\n---\n# Body\n"
-    const { vault, flush } = createFileBackedVault({ fs, root: "/w", newId: ids("id") })
+    const { vault, flush } = createFileBackedVault({ fs, newId: ids("id") })
     const meta = vault.create("Rule", body)
     await flush()
 
@@ -370,7 +432,7 @@ describe("file-backed vault — on-disk specifics", () => {
   it("caps the filename length for a very long / multibyte title", async () => {
     const fs = fakeFs()
     const longTitle = "あ".repeat(300) // 900 UTF-8 bytes — would blow the 255-byte fs limit
-    const { vault, flush } = createFileBackedVault({ fs, root: "/w", newId: ids("id") })
+    const { vault, flush } = createFileBackedVault({ fs, newId: ids("id") })
     const meta = vault.create(longTitle, "# long\n")
     await flush()
 
@@ -396,7 +458,7 @@ describe("file-backed vault — on-disk specifics", () => {
         ["/w/note.md", "---\nid: lower\n---\n# lower\n"], // distinct id — a genuinely different note
       ]),
     )
-    const { vault, whenLoaded } = createFileBackedVault({ fs, root: "/w" })
+    const { vault, whenLoaded } = createFileBackedVault({ fs })
     await whenLoaded
     expect(
       vault
@@ -408,12 +470,12 @@ describe("file-backed vault — on-disk specifics", () => {
 
   it("reports a whitespace-only title identically on create and after reload", async () => {
     const fs = fakeFs()
-    const first = createFileBackedVault({ fs, root: "/w", newId: ids("id") })
+    const first = createFileBackedVault({ fs, newId: ids("id") })
     const meta = first.vault.create("   ", "# blank titled\n")
     expect(meta.title).toBe("   ")
     await first.flush()
 
-    const second = createFileBackedVault({ fs, root: "/w", newId: ids("z") })
+    const second = createFileBackedVault({ fs, newId: ids("z") })
     await second.whenLoaded
     const [note] = second.vault.list()
     expect(note?.title).toBe("   ") // hydrate honors the present (non-empty) frontmatter title

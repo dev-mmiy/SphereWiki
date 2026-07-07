@@ -3,29 +3,24 @@ import { createFileBackedVault, type FileBackedVault, type FsPort } from "@spher
 /** The Tauri `invoke` signature (injected so the adapter is unit-testable without the runtime). */
 export type Invoke = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>
 
-/** The filename from a "/"-joined vault path (the core joins `root` + name; Rust scopes by name). */
-const basename = (path: string): string => path.slice(path.lastIndexOf("/") + 1)
-
 /**
- * An `FsPort` backed by the workspace-scoped Rust vault commands (M2b.3). The core hands "/"-joined
- * paths under a logical `root`; the Rust side resolves everything under one dir per `workspace`, so
- * only the filename is forwarded (isolation is enforced in Rust, not by trusting the path here).
+ * An `FsPort` backed by the workspace-scoped Rust vault commands (M2b.3). The core deals in
+ * **root-relative** paths (`"Home.md"`, `"work/Foo.md"`); the Rust side resolves them under one dir
+ * per `workspace`, validating each stays within it — isolation is enforced in Rust, not by trusting
+ * the path here. Notes may live in subfolders (`vault_list_files` walks recursively).
  */
 export function createTauriFsPort(workspace: string, invoke: Invoke): FsPort {
   return {
-    readdir: () => invoke<string[]>("vault_list_files", { workspace }),
-    readFile: (path) => invoke<string>("vault_read_file", { workspace, name: basename(path) }),
-    writeFile: (path, content) =>
-      invoke<void>("vault_write_file", { workspace, name: basename(path), content }),
-    rename: (from, to) =>
-      invoke<void>("vault_rename_file", { workspace, from: basename(from), to: basename(to) }),
-    // The Rust side `create_dir_all`s on write, so the dir is materialized lazily — nothing to do.
-    mkdir: async () => {},
-    // Soft-delete on disk (O2): the Rust commands move the file to/from a vault-root `.trash/`.
-    trash: (name) => invoke<void>("vault_trash_file", { workspace, name: basename(name) }),
-    untrash: (name) => invoke<void>("vault_untrash_file", { workspace, name: basename(name) }),
+    listFiles: () => invoke<string[]>("vault_list_files", { workspace }),
+    readFile: (path) => invoke<string>("vault_read_file", { workspace, path }),
+    writeFile: (path, content) => invoke<void>("vault_write_file", { workspace, path, content }),
+    rename: (from, to) => invoke<void>("vault_rename_file", { workspace, from, to }),
+    // Soft-delete on disk (O2): the Rust commands move the file to/from a vault-root `.trash/`,
+    // preserving its subpath (so it restores to the same folder).
+    trash: (path) => invoke<void>("vault_trash_file", { workspace, path }),
+    untrash: (path) => invoke<void>("vault_untrash_file", { workspace, path }),
     listTrash: () => invoke<string[]>("vault_list_trash", { workspace }),
-    readTrash: (name) => invoke<string>("vault_read_trash", { workspace, name: basename(name) }),
+    readTrash: (path) => invoke<string>("vault_read_trash", { workspace, path }),
   }
 }
 
@@ -56,7 +51,6 @@ export async function createTauriVault(
 ): Promise<FileBackedVault> {
   const backed = createFileBackedVault({
     fs: createTauriFsPort(workspace, invoke),
-    root: workspace,
     seed,
     ...(options.newId !== undefined ? { newId: options.newId } : {}),
     ...(options.onWriteError !== undefined ? { onWriteError: options.onWriteError } : {}),

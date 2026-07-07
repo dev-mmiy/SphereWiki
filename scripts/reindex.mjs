@@ -14,26 +14,47 @@ import { DuckDBInstance } from "@duckdb/node-api"
 import { createLocalEmbedder, createMemoryVectorIndex, reindexWorkspace } from "@spherewiki/ai"
 import { asNoteId, asWorkspaceId, createFileBackedVault } from "@spherewiki/shared"
 
-/** A `node:fs` FsPort driving the platform-free file-vault core (M2b.2) in Node. */
-function nodeFsPort() {
+/**
+ * A `node:fs` FsPort (root-scoped to `vaultDir`) driving the platform-free file-vault core in Node.
+ * Paths are workspace-root-relative; `listFiles` walks subfolders (skipping dot-dirs). It provides NO
+ * trash methods, so the core never loads `.trash/` — a Markdown-only reindex excludes trashed notes
+ * and prunes their derived vectors (O2), which is exactly the idempotent rebuild we want.
+ */
+function nodeFsPort(vaultDir) {
+  const abs = (rel) => join(vaultDir, rel)
+  const walk = async (dir, prefix) => {
+    let entries
+    try {
+      entries = await readdir(dir, { withFileTypes: true })
+    } catch (error) {
+      if (error.code === "ENOENT") return []
+      throw error
+    }
+    const out = []
+    for (const ent of entries) {
+      if (ent.name.startsWith(".")) continue // skip .trash/ / .spherewiki/ / temp writes
+      const rel = prefix ? `${prefix}/${ent.name}` : ent.name
+      if (ent.isDirectory()) out.push(...(await walk(join(dir, ent.name), rel)))
+      else if (ent.name.endsWith(".md")) out.push(rel)
+    }
+    return out
+  }
   return {
-    readdir: async (dir) => {
-      try {
-        return await readdir(dir)
-      } catch (error) {
-        if (error.code === "ENOENT") return []
-        throw error
-      }
-    },
-    readFile: (path) => readFile(path, "utf8"),
+    listFiles: () => walk(vaultDir, ""),
+    readFile: (rel) => readFile(abs(rel), "utf8"),
     // Atomic-ish: write a sibling temp (not `.md`, so the scan ignores it) then rename over the target.
-    writeFile: async (path, content) => {
-      const tmp = `${path}.tmp`
+    writeFile: async (rel, content) => {
+      const full = abs(rel)
+      await mkdir(dirname(full), { recursive: true })
+      const tmp = `${full}.tmp`
       await writeFile(tmp, content, "utf8")
-      await rename(tmp, path)
+      await rename(tmp, full)
     },
-    rename: (from, to) => rename(from, to),
-    mkdir: (dir) => mkdir(dir, { recursive: true }).then(() => undefined),
+    rename: async (from, to) => {
+      const dest = abs(to)
+      await mkdir(dirname(dest), { recursive: true })
+      await rename(abs(from), dest)
+    },
   }
 }
 
@@ -107,7 +128,7 @@ async function openDuckDbIndex(dbPath, workspaceId, model) {
 async function reindexVault(vaultDir, { force = false } = {}) {
   const workspaceId = asWorkspaceId(basename(vaultDir))
   const embedder = createLocalEmbedder()
-  const { vault, whenLoaded } = createFileBackedVault({ fs: nodeFsPort(), root: vaultDir })
+  const { vault, whenLoaded } = createFileBackedVault({ fs: nodeFsPort(vaultDir) })
   await whenLoaded
   const db = await openDuckDbIndex(
     join(vaultDir, ".spherewiki", "index.duckdb"),

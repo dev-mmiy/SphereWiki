@@ -26,35 +26,38 @@ interface FakeFs extends FsPort {
   readonly store: Map<string, string>
 }
 
-/** In-memory FsPort. `shouldFailWrite`, when set, injects a transient writeFile rejection. */
-function makeFakeFs(store = new Map<string, string>(), shouldFailWrite?: () => boolean): FakeFs {
-  const dirOf = (dir: string) => (dir.endsWith("/") ? dir : `${dir}/`)
+/** In-memory FsPort (root-scoped; store keyed by full path, methods take root-relative paths).
+ * `shouldFailWrite`, when set, injects a transient writeFile rejection. */
+function makeFakeFs(
+  store = new Map<string, string>(),
+  shouldFailWrite?: () => boolean,
+  root = "/w",
+): FakeFs {
+  const abs = (rel: string) => `${root}/${rel}`
   return {
     store,
-    readdir: async (dir) => {
-      const prefix = dirOf(dir)
-      const names = new Set<string>()
-      for (const path of store.keys()) {
-        if (path.startsWith(prefix)) names.add(path.slice(prefix.length).split("/")[0] as string)
-      }
-      return [...names]
+    listFiles: async () => {
+      const prefix = `${root}/`
+      return [...store.keys()]
+        .filter((k) => k.startsWith(prefix))
+        .map((k) => k.slice(prefix.length))
+        .filter((p) => p.endsWith(".md") && !p.split("/").some((s) => s.startsWith(".")))
     },
-    readFile: async (path) => {
-      const value = store.get(path)
-      if (value === undefined) throw new Error(`ENOENT: ${path}`)
+    readFile: async (rel) => {
+      const value = store.get(abs(rel))
+      if (value === undefined) throw new Error(`ENOENT: ${rel}`)
       return value
     },
-    writeFile: async (path, content) => {
+    writeFile: async (rel, content) => {
       if (shouldFailWrite?.()) throw new Error("EIO (injected transient failure)")
-      store.set(path, content)
+      store.set(abs(rel), content)
     },
     rename: async (from, to) => {
-      const value = store.get(from)
+      const value = store.get(abs(from))
       if (value === undefined) throw new Error(`ENOENT: ${from}`)
-      store.set(to, value)
-      store.delete(from)
+      store.set(abs(to), value)
+      store.delete(abs(from))
     },
-    mkdir: async () => {},
   }
 }
 
@@ -83,7 +86,6 @@ describe("file-backed vault (property)", () => {
       const store = new Map<string, string>()
       const first = createFileBackedVault({
         fs: makeFakeFs(store),
-        root: "/w",
         newId: (() => {
           let n = 0
           return () => `t${trial}-${(++n).toString()}`
@@ -125,7 +127,6 @@ describe("file-backed vault (property)", () => {
       // Reload: a fresh instance over the same on-disk bytes (reopening the app offline).
       const second = createFileBackedVault({
         fs: makeFakeFs(store),
-        root: "/w",
         newId: () => `reload-${trial}`,
       })
       await second.whenLoaded
@@ -146,7 +147,6 @@ describe("file-backed vault (property)", () => {
       let flaky = true
       const { vault, whenLoaded, flush } = createFileBackedVault({
         fs: makeFakeFs(store, () => flaky && rand() < 0.5), // ~half of writes fail while flaky
-        root: "/w",
         newId: (() => {
           let n = 0
           return () => `f${trial}-${(++n).toString()}`

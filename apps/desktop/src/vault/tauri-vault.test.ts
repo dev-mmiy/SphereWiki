@@ -3,35 +3,35 @@ import { describe, expect, it } from "vitest"
 import { createTauriFsPort, type Invoke } from "./tauri-vault"
 
 describe("createTauriFsPort", () => {
-  it("forwards each op to the workspace-scoped Rust command with just the filename", async () => {
+  it("forwards each op to the workspace-scoped Rust command with the root-relative path", async () => {
     const calls: Array<[string, Record<string, unknown> | undefined]> = []
     const invoke = (async (cmd: string, args?: Record<string, unknown>) => {
       calls.push([cmd, args])
-      if (cmd === "vault_list_files") return ["Home.md"]
-      if (cmd === "vault_read_file") return "# Home\n"
+      if (cmd === "vault_list_files") return ["Home.md", "work/Foo.md"]
+      if (cmd === "vault_read_file") return "# Foo\n"
       return undefined
     }) as Invoke
 
     const fs = createTauriFsPort("ws-dev", invoke)
-    expect(await fs.readdir("ws-dev")).toEqual(["Home.md"])
-    expect(await fs.readFile("ws-dev/sub/Home.md")).toBe("# Home\n") // only the basename is sent
-    await fs.writeFile("ws-dev/Note.md", "body")
-    await fs.rename("ws-dev/Old.md", "ws-dev/New.md")
-    await fs.mkdir("ws-dev") // no IPC — Rust create_dir_all's on write
+    expect(await fs.listFiles()).toEqual(["Home.md", "work/Foo.md"]) // recursive, root-relative
+    expect(await fs.readFile("work/Foo.md")).toBe("# Foo\n") // the FULL relative path is sent (subfolder)
+    await fs.writeFile("Note.md", "body")
+    await fs.rename("work/Old.md", "work/New.md")
 
     expect(calls).toEqual([
       ["vault_list_files", { workspace: "ws-dev" }],
-      ["vault_read_file", { workspace: "ws-dev", name: "Home.md" }],
-      ["vault_write_file", { workspace: "ws-dev", name: "Note.md", content: "body" }],
-      ["vault_rename_file", { workspace: "ws-dev", from: "Old.md", to: "New.md" }],
+      ["vault_read_file", { workspace: "ws-dev", path: "work/Foo.md" }],
+      ["vault_write_file", { workspace: "ws-dev", path: "Note.md", content: "body" }],
+      ["vault_rename_file", { workspace: "ws-dev", from: "work/Old.md", to: "work/New.md" }],
     ])
   })
 })
 
 /**
- * A faithful in-memory stand-in for the Rust vault commands: one file store per workspace, scoped by
- * name — so the adapter + `createFileBackedVault` core can be exercised end-to-end without the
- * native runtime, proving the whole frontend -> invoke -> (fake) Rust -> disk path integrates.
+ * A faithful in-memory stand-in for the Rust vault commands: one file store per workspace, keyed by
+ * **root-relative path** (subfolders included) — so the adapter + `createFileBackedVault` core can be
+ * exercised end-to-end without the native runtime, proving the whole frontend -> invoke -> (fake)
+ * Rust -> disk path integrates. `vault_list_files` filters out `.trash/`/dot-folders, as Rust does.
  */
 function fakeRustBackend(): { invoke: Invoke; files: Map<string, Map<string, string>> } {
   const files = new Map<string, Map<string, string>>()
@@ -46,7 +46,7 @@ function fakeRustBackend(): { invoke: Invoke; files: Map<string, Map<string, str
   const invoke = (async (cmd: string, args?: Record<string, unknown>) => {
     const a = (args ?? {}) as {
       workspace: string
-      name?: string
+      path?: string
       content?: string
       from?: string
       to?: string
@@ -54,14 +54,14 @@ function fakeRustBackend(): { invoke: Invoke; files: Map<string, Map<string, str
     const d = dir(a.workspace)
     switch (cmd) {
       case "vault_list_files":
-        return [...d.keys()]
+        return [...d.keys()].filter((p) => !p.split("/").some((s) => s.startsWith(".")))
       case "vault_read_file": {
-        const value = d.get(a.name as string)
-        if (value === undefined) throw new Error(`ENOENT: ${a.name}`)
+        const value = d.get(a.path as string)
+        if (value === undefined) throw new Error(`ENOENT: ${a.path}`)
         return value
       }
       case "vault_write_file":
-        d.set(a.name as string, a.content as string)
+        d.set(a.path as string, a.content as string)
         return undefined
       case "vault_rename_file": {
         const value = d.get(a.from as string)
@@ -89,7 +89,6 @@ describe("Tauri file vault (adapter + core over a simulated Rust backend)", () =
     const { invoke, files } = fakeRustBackend()
     const first = createFileBackedVault({
       fs: createTauriFsPort("ws-dev", invoke),
-      root: "ws-dev",
       seed: [{ title: "Home", body: "# Home\n[[Ideas]]" }],
       newId: ids("a"),
     })
@@ -105,7 +104,6 @@ describe("Tauri file vault (adapter + core over a simulated Rust backend)", () =
     // A fresh vault over the same backend = relaunching the native app.
     const second = createFileBackedVault({
       fs: createTauriFsPort("ws-dev", invoke),
-      root: "ws-dev",
       newId: ids("b"),
     })
     await second.whenLoaded
@@ -128,7 +126,6 @@ describe("Tauri file vault (adapter + core over a simulated Rust backend)", () =
     const errors: unknown[] = []
     const { vault, flush } = createFileBackedVault({
       fs: createTauriFsPort("ws-dev", invoke),
-      root: "ws-dev",
       onWriteError: (e) => errors.push(e),
     })
     await flush() // hydrate (empty dir)
@@ -141,7 +138,6 @@ describe("Tauri file vault (adapter + core over a simulated Rust backend)", () =
     const { invoke, files } = fakeRustBackend()
     const a = createFileBackedVault({
       fs: createTauriFsPort("ws-a", invoke),
-      root: "ws-a",
       seed: [{ title: "A note", body: "# A\n" }],
       newId: ids("a"),
     })
@@ -149,7 +145,6 @@ describe("Tauri file vault (adapter + core over a simulated Rust backend)", () =
     await a.flush()
     const b = createFileBackedVault({
       fs: createTauriFsPort("ws-b", invoke),
-      root: "ws-b",
       newId: ids("b"),
     })
     await b.whenLoaded

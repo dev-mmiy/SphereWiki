@@ -16,33 +16,32 @@ import type { ConnectLocalPersistence } from "../sync/local-persistence"
 import type { ConnectRegistryPersistence } from "../sync/registry-persistence"
 import { SEED, useVaultWorkspace } from "./use-vault-workspace"
 
-/** A byte-exact in-memory FsPort so a real file-backed vault can drive the hook (as under Tauri). */
-function fakeFs(store = new Map<string, string>()): FsPort {
-  const dirOf = (dir: string) => (dir.endsWith("/") ? dir : `${dir}/`)
+/** A byte-exact in-memory FsPort (root-scoped; root-relative paths) so a real file-backed vault can
+ * drive the hook as under Tauri — `listFiles` walks recursively, dot-folders excluded. */
+function fakeFs(store = new Map<string, string>(), root = "/w"): FsPort {
+  const abs = (rel: string) => `${root}/${rel}`
   return {
-    readdir: async (dir) => {
-      const prefix = dirOf(dir)
-      const names = new Set<string>()
-      for (const path of store.keys()) {
-        if (path.startsWith(prefix)) names.add(path.slice(prefix.length).split("/")[0] as string)
-      }
-      return [...names]
+    listFiles: async () => {
+      const prefix = `${root}/`
+      return [...store.keys()]
+        .filter((k) => k.startsWith(prefix))
+        .map((k) => k.slice(prefix.length))
+        .filter((p) => p.endsWith(".md") && !p.split("/").some((s) => s.startsWith(".")))
     },
-    readFile: async (path) => {
-      const value = store.get(path)
-      if (value === undefined) throw new Error(`ENOENT: ${path}`)
+    readFile: async (rel) => {
+      const value = store.get(abs(rel))
+      if (value === undefined) throw new Error(`ENOENT: ${rel}`)
       return value
     },
-    writeFile: async (path, content) => {
-      store.set(path, content)
+    writeFile: async (rel, content) => {
+      store.set(abs(rel), content)
     },
     rename: async (from, to) => {
-      const value = store.get(from)
+      const value = store.get(abs(from))
       if (value === undefined) throw new Error(`ENOENT: ${from}`)
-      store.set(to, value)
-      store.delete(from)
+      store.set(abs(to), value)
+      store.delete(abs(from))
     },
-    mkdir: async () => {},
   }
 }
 
@@ -1271,7 +1270,6 @@ describe("useVaultWorkspace", () => {
     // next doc-persist. An injected, pre-hydrated file vault (as under Tauri) drives the hook.
     const built = createFileBackedVault({
       fs: fakeFs(),
-      root: "ws",
       seed: SEED,
       newId: (() => {
         let n = 0

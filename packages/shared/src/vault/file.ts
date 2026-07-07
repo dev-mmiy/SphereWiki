@@ -10,32 +10,35 @@ import type { NoteMeta, Vault } from "./types"
  * newline rewriting, or `parseNote`'s `\n` split, `contentHash`, and byte round-trip all break.
  */
 export interface FsPort {
-  /** Names (files + subdirs) directly under `dir`; resolves `[]` when `dir` does not exist. */
-  readdir(dir: string): Promise<readonly string[]>
-  /** The file's content as a verbatim UTF-8 string. */
-  readFile(path: string): Promise<string>
-  /** Write `content` verbatim; MUST be atomic (temp + rename) so a crash never truncates. */
-  writeFile(path: string, content: string): Promise<void>
-  /** Move/rename a file. */
-  rename(from: string, to: string): Promise<void>
-  /** Create `dir` (recursive); no-op if it already exists. */
-  mkdir(dir: string): Promise<void>
+  /**
+   * All `.md` note paths, **root-relative and recursive** (e.g. `"Home.md"`, `"work/Foo.md"`),
+   * excluding dot-files/dot-folders (`.trash/`, `.spherewiki/`). `[]` if the vault dir is absent.
+   * Notes may live in subfolders for human-readable grouping — the adapter owns the vault root, so
+   * every other method takes a **root-relative** path (never a full path or a bare basename).
+   */
+  listFiles(): Promise<readonly string[]>
+  /** The file's content as a verbatim UTF-8 string (by root-relative path). */
+  readFile(relpath: string): Promise<string>
+  /** Write `content` verbatim, creating parent dirs; MUST be atomic (temp + rename). */
+  writeFile(relpath: string, content: string): Promise<void>
+  /** Move/rename a file (both root-relative; parent dirs of the target are created). */
+  rename(fromRel: string, toRel: string): Promise<void>
   /**
    * Optional soft-delete-on-disk ops (O2). When an adapter provides them, the vault moves a
-   * deleted note's file into a `.trash/` subdir (kept restorable), and **loads existing trashed
-   * files on hydrate** so the trash survives a reload — while a Markdown-only `reindex` (an adapter
-   * WITHOUT these) never sees them, so it prunes the derived vector. All take the bare filename.
+   * deleted note's file into a `.trash/` subdir (kept restorable, subpath preserved), and **loads
+   * existing trashed files on hydrate** so the trash survives a reload — while a Markdown-only
+   * `reindex` (an adapter WITHOUT these) never sees them, so it prunes the derived vector. Paths are
+   * root-relative (for `trash`/`untrash`/`readTrash`) or relative to `.trash/` (for `listTrash`).
    */
-  trash?(name: string): Promise<void>
-  untrash?(name: string): Promise<void>
+  trash?(relpath: string): Promise<void>
+  untrash?(relpath: string): Promise<void>
   listTrash?(): Promise<readonly string[]>
-  readTrash?(name: string): Promise<string>
+  readTrash?(relpath: string): Promise<string>
 }
 
 export interface FileVaultOptions {
+  /** The filesystem seam — root-scoped by the adapter, so the vault deals only in relative paths. */
   readonly fs: FsPort
-  /** The workspace's vault directory — one dir per workspace → isolation by construction. */
-  readonly root: string
   /** Notes to write when the vault dir is genuinely empty (first run only). */
   readonly seed?: ReadonlyArray<{ title: string; body: string }>
   /** Id generator; inject for deterministic tests. Defaults to `crypto.randomUUID`. */
@@ -72,8 +75,16 @@ const MAX_STEM_BYTES = 200
 /** Characters that are not portable in a filename (POSIX `/`, Windows-reserved set). */
 const ILLEGAL_CHARS = '/\\:*?"<>|'
 
-/** Join a dir and a name with "/" (POSIX; the app targets macOS/Linux at M2b). */
-const join = (dir: string, name: string): string => `${dir}/${name}`
+/** The directory portion of a "/"-joined root-relative path ("" for a top-level file). */
+const dirOf = (relpath: string): string => {
+  const i = relpath.lastIndexOf("/")
+  return i === -1 ? "" : relpath.slice(0, i)
+}
+
+/** True for a note path we load: a `.md` file with no dot-prefixed path segment (defensive; the
+ * adapter's `listFiles` already excludes dot-folders, but never trust it to). */
+const isNotePath = (relpath: string): boolean =>
+  relpath.endsWith(MD) && !relpath.split("/").some((seg) => seg.startsWith("."))
 
 /**
  * Web Crypto `randomUUID`, present in browsers and Node 20+. Read off `globalThis` with a local
@@ -147,7 +158,7 @@ export function vaultSlug(title: string): string {
  * editor round-trips the frontmatter, so this doesn't occur in the app wiring).
  */
 export function createFileBackedVault(options: FileVaultOptions): FileBackedVault {
-  const { fs, root, seed = [] } = options
+  const { fs, seed = [] } = options
   const newId = options.newId ?? randomUuid
   const onWriteError = options.onWriteError ?? (() => {})
 
@@ -155,24 +166,33 @@ export function createFileBackedVault(options: FileVaultOptions): FileBackedVaul
     meta: NoteMeta
     /** The full `.md` source (frontmatter + body) — exactly what `read` returns and `write` sets. */
     source: string
-    /** The exact on-disk filename (as read from / written to the fs — may be NFD on macOS). */
+    /** The note's **root-relative** path (`"Home.md"` or `"work/Foo.md"`; may be NFD on macOS). */
     filename: string
     /** True while the note's file lives in `.trash/` (soft-deleted on disk, O2). Still in the mirror
      * (readable + in `list()`); the caller partitions live vs trash by its own tombstone. */
     trashed?: boolean
   }
   const notes = new Map<NoteId, Entry>()
-  /** Lowercased NFC filenames in use, for case-insensitive collision resolution (macOS APFS). */
+  /** Lowercased NFC relative paths in use, for case-insensitive collision resolution (macOS APFS). */
   const usedNames = new Set<string>()
   const nameKey = (name: string): string => name.normalize("NFC").toLowerCase()
+  /** The filename stem (basename minus `.md`, NFC) — the Obsidian-style title fallback for a file
+   * with no frontmatter title, at any folder depth. */
+  const stemOf = (relpath: string): string =>
+    relpath
+      .slice(relpath.lastIndexOf("/") + 1)
+      .normalize("NFC")
+      .slice(0, -MD.length)
 
-  const reserveUnique = (title: string): string => {
+  /** Reserve a unique root-relative filename for `title` within directory `dir` ("" = vault root). */
+  const reserveUnique = (title: string, dir = ""): string => {
     const stem = vaultSlug(title)
-    let name = `${stem}${MD}`
+    const prefix = dir === "" ? "" : `${dir}/`
+    let name = `${prefix}${stem}${MD}`
     let n = 1
     while (usedNames.has(nameKey(name))) {
       n += 1
-      name = `${stem} ${n}${MD}`
+      name = `${prefix}${stem} ${n}${MD}`
     }
     usedNames.add(nameKey(name))
     return name
@@ -203,18 +223,16 @@ export function createFileBackedVault(options: FileVaultOptions): FileBackedVaul
   const flush = (): Promise<void> => tail.then(() => undefined)
 
   const hydrate = async (): Promise<void> => {
-    await fs.mkdir(root)
-    const rawNames = (await fs.readdir(root))
-      // Only top-level `.md`, skipping dot-files/dot-folders (`.trash/`, `.spherewiki/`) — a flat
-      // scan never descends, so trashed/sidecar files can't enter the note set.
-      .filter((n) => n.endsWith(MD) && !n.startsWith("."))
-    // Deterministic order (readdir order is platform-dependent): sort by the NFC-normalized name.
+    // All `.md` note paths, root-relative and RECURSIVE (subfolders are allowed for human-readable
+    // grouping); dot-folders (`.trash/`, `.spherewiki/`) are excluded by the adapter + isNotePath.
+    const rawNames = ((await fs.listFiles()) ?? []).filter(isNotePath)
+    // Deterministic order (fs order is platform-dependent): sort by the NFC-normalized path.
     const sorted = [...rawNames].sort((a, b) => (a.normalize("NFC") < b.normalize("NFC") ? -1 : 1))
 
     const writebacks: Array<{ name: string; content: string }> = []
     for (const raw of sorted) {
       const key = nameKey(raw)
-      const source = await fs.readFile(join(root, raw)) // read by the on-disk name (may be NFD)
+      const source = await fs.readFile(raw) // read by the root-relative path (may be NFD)
       const fm = parseNote(source).frontmatter
       let id = typeof fm.id === "string" ? fm.id.trim() : ""
       let src = source
@@ -224,21 +242,21 @@ export function createFileBackedVault(options: FileVaultOptions): FileBackedVaul
         src = upsertFrontmatter(source, { id })
         writebacks.push({ name: raw, content: src })
       } else if (notes.has(asNoteId(id))) {
-        // Two files claim the same id — the first (sorted) wins, but reserve the loser's name so a
+        // Two files claim the same id — the first (sorted) wins, but reserve the loser's path so a
         // later create/rename can't reclaim it and clobber that still-on-disk file.
         usedNames.add(key)
         continue
       }
-      // Dedup by note id, not by filename: two distinct files that only differ by case/normalization
-      // are genuinely separate notes on a case-sensitive volume and both must load.
+      // Dedup by note id, not by path: two distinct files that only differ by case/normalization are
+      // genuinely separate notes on a case-sensitive volume and both must load.
       const title =
         typeof fm.title === "string" && fm.title !== ""
           ? fm.title // exact title from frontmatter (file-wins, O1)
-          : raw.normalize("NFC").slice(0, -MD.length) // else the filename stem (Obsidian-style)
+          : stemOf(raw) // else the filename stem (Obsidian-style; basename at any folder depth)
       notes.set(asNoteId(id), { meta: { id: asNoteId(id), title }, source: src, filename: raw })
       usedNames.add(key)
     }
-    for (const wb of writebacks) await fs.writeFile(join(root, wb.name), wb.content)
+    for (const wb of writebacks) await fs.writeFile(wb.name, wb.content)
 
     // Load already-trashed notes (O2) so the trash survives a reload — only when the adapter exposes
     // trash reads (the Tauri app does; the `reindex` node adapter does NOT, so a rebuild-from-Markdown
@@ -249,19 +267,16 @@ export function createFileBackedVault(options: FileVaultOptions): FileBackedVaul
     if (fs.listTrash !== undefined && fs.readTrash !== undefined) {
       const readTrash = fs.readTrash
       const trashNames = ((await fs.listTrash()) ?? [])
-        .filter((n) => n.endsWith(MD) && !n.startsWith("."))
+        .filter(isNotePath)
         .sort((a, b) => (a.normalize("NFC") < b.normalize("NFC") ? -1 : 1))
       for (const raw of trashNames) {
         const key = nameKey(raw)
-        if (usedNames.has(key)) continue // a live file already owns this name
+        if (usedNames.has(key)) continue // a live file already owns this path
         const source = await readTrash(raw)
         const fm = parseNote(source).frontmatter
         const id = typeof fm.id === "string" ? fm.id.trim() : ""
         if (id === "" || notes.has(asNoteId(id))) continue // trashed files carry an id; skip dup/idless
-        const title =
-          typeof fm.title === "string" && fm.title !== ""
-            ? fm.title
-            : raw.normalize("NFC").slice(0, -MD.length)
+        const title = typeof fm.title === "string" && fm.title !== "" ? fm.title : stemOf(raw)
         notes.set(asNoteId(id), {
           meta: { id: asNoteId(id), title },
           source,
@@ -276,7 +291,7 @@ export function createFileBackedVault(options: FileVaultOptions): FileBackedVaul
     if (notes.size === 0 && seed.length > 0) {
       for (const entry of seed) {
         const created = putNew(asNoteId(newId()), entry.title, entry.body)
-        await fs.writeFile(join(root, created.filename), created.source)
+        await fs.writeFile(created.filename, created.source)
       }
     }
   }
@@ -299,22 +314,22 @@ export function createFileBackedVault(options: FileVaultOptions): FileBackedVaul
         const untrash = fs.untrash
         enqueue(async () => {
           await untrash(entry.filename).catch(() => {}) // best-effort; the write below still persists
-          await fs.writeFile(join(root, entry.filename), body)
+          await fs.writeFile(entry.filename, body)
         })
       } else {
-        enqueue(() => fs.writeFile(join(root, entry.filename), body))
+        enqueue(() => fs.writeFile(entry.filename, body))
       }
     },
     create: (title, body = "") => {
       const entry = putNew(asNoteId(newId()), title, body)
-      enqueue(() => fs.writeFile(join(root, entry.filename), entry.source))
+      enqueue(() => fs.writeFile(entry.filename, entry.source))
       return entry.meta
     },
     ensure: (id, title, body = "") => {
       const existing = notes.get(id)
       if (existing !== undefined) return existing.meta // insert-if-absent: never overwrite a body
       const entry = putNew(id, title, body)
-      enqueue(() => fs.writeFile(join(root, entry.filename), entry.source))
+      enqueue(() => fs.writeFile(entry.filename, entry.source))
       return entry.meta
     },
     rename: (id, title) => {
@@ -323,11 +338,13 @@ export function createFileBackedVault(options: FileVaultOptions): FileBackedVaul
       const oldName = entry.filename
       usedNames.delete(nameKey(oldName)) // free the old slug before re-deriving
       const source = upsertFrontmatter(entry.source, { title }) // title only; body untouched
-      const filename = reserveUnique(title)
+      // Keep the note in its own folder — only the basename (title slug) changes (folders are for
+      // human grouping, so a rename never relocates a note across the hierarchy).
+      const filename = reserveUnique(title, dirOf(oldName))
       notes.set(id, { meta: { id, title }, source, filename })
       enqueue(async () => {
-        if (filename !== oldName) await fs.rename(join(root, oldName), join(root, filename))
-        await fs.writeFile(join(root, filename), source)
+        if (filename !== oldName) await fs.rename(oldName, filename)
+        await fs.writeFile(filename, source)
       })
     },
     // Soft-delete on disk (O2): move the note's file into `.trash/` (kept in the mirror + readable,
