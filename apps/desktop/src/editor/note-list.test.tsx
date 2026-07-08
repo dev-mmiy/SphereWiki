@@ -79,7 +79,7 @@ describe("NoteList — folder tree (v1b)", () => {
     expect(within(details).getByRole("button", { name: "Task" })).toBeTruthy() // Task nested under it
   })
 
-  it("shows New folder / New note / New sub-note per the handlers, and no per-note ＋", () => {
+  it("shows New folder + New note at the top (both act under the selection), and no per-note ＋", () => {
     render(
       <NoteList
         notes={[note("a", "Home")]}
@@ -87,12 +87,11 @@ describe("NoteList — folder tree (v1b)", () => {
         onSelect={vi.fn()}
         onCreate={vi.fn()}
         onCreateFolder={vi.fn()}
-        onCreateSubnote={vi.fn()}
       />,
     )
     expect(screen.getByRole("button", { name: "New folder" })).toBeTruthy()
     expect(screen.getByRole("button", { name: "New note" })).toBeTruthy()
-    expect(screen.getByRole("button", { name: "New sub-note" })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "New sub-note" })).toBeNull() // merged into "New note"
     expect(screen.queryByLabelText(/^New note in /)).toBeNull() // creation is top-level, not per-node
   })
 

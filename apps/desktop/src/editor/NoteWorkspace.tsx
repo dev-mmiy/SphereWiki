@@ -157,10 +157,17 @@ export function NoteWorkspace({
     setSelectedFolder(null)
   }, [ws.activeId])
   const activeNote = ws.notes.find((m) => m.id === ws.activeId)
-  // Creation is context-aware: new items land in the selected folder, else the active note's folder,
-  // else the vault root. A fresh title free of BOTH visible and trashed notes so create never
-  // resolves-by-title to, or restores, an existing note.
-  const contextFolder = selectedFolder ?? activeNote?.path ?? ""
+  // Creation targets UNDER the current selection: the selected folder (a note/folder lands inside it),
+  // else the active note's OWN children folder `<path>/<name>` (so the new item nests under that note,
+  // making it a folder-parent), else the vault root. A fresh title free of BOTH visible and trashed
+  // notes so create never resolves-by-title to, or restores, an existing note.
+  const contextFolder =
+    selectedFolder ??
+    (activeNote?.name !== undefined
+      ? activeNote.path
+        ? `${activeNote.path}/${activeNote.name}`
+        : activeNote.name
+      : "")
   const freshTitle = () => freshNoteTitle([...ws.notes, ...ws.deleted].map((m) => m.title))
   const createFolderInContext = () => {
     // Names already in use directly under contextFolder — so "New folder N" never silently reuses one:
@@ -307,7 +314,8 @@ export function NoteWorkspace({
                 setAiStatus(null)
                 ws.select(id) // clears the folder context via the activeId effect above
               }}
-              // "New note" — a document in the current context (selected folder / active note's folder).
+              // "New note" — a document UNDER the current selection (inside the selected folder, or
+              // under the active note as a child, else at root).
               onCreate={() => {
                 clearDiff()
                 setAiStatus(null)
@@ -334,19 +342,8 @@ export function NoteWorkspace({
                     onMove: (id: NoteId, folder: string) => {
                       ws.move(id, folder)
                     },
-                    // "New folder" — an empty 📁 container in the current context.
+                    // "New folder" — an empty 📁 container UNDER the current selection.
                     onCreateFolder: createFolderInContext,
-                    // "New sub-note" — a writable child UNDER the active note (folder-note convention),
-                    // so the active note becomes a folder-parent.
-                    onCreateSubnote: () => {
-                      if (activeNote?.name === undefined) return // needs the on-disk stem (file vault)
-                      const folder = activeNote.path
-                        ? `${activeNote.path}/${activeNote.name}`
-                        : activeNote.name
-                      clearDiff()
-                      setAiStatus(null)
-                      ws.create(freshTitle(), folder)
-                    },
                   }
                 : {})}
               onRestore={(id) => ws.restore(id)}

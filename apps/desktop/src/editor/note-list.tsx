@@ -60,7 +60,6 @@ export function NoteList({
   onRename,
   onMove,
   onCreateFolder,
-  onCreateSubnote,
   onRestore,
   canEdit = true,
 }: {
@@ -86,8 +85,6 @@ export function NoteList({
   onMove?: (id: NoteId, folder: string) => void
   /** Create a new FOLDER in the current context. Omitted without folder support (web). */
   onCreateFolder?: () => void
-  /** Create a writable child note UNDER the active note (a "sub-note"). Omitted without folders. */
-  onCreateSubnote?: () => void
   /** Restore a soft-deleted note. */
   onRestore?: (id: NoteId) => void
   canEdit?: boolean
@@ -227,9 +224,9 @@ export function NoteList({
 
   return (
     <nav>
-      {/* Creation is top-level + context-aware (acts in the selected folder / active note's folder /
-          root): "New folder" makes a container, "New note" a document, "New sub-note" a writable note
-          under the active note. No per-node ＋ clutters the tree. */}
+      {/* Creation is top-level + context-aware — both act UNDER the current selection (inside the
+          selected folder, or under the active note, else at root): "New folder" makes a container,
+          "New note" a document. No per-node ＋ clutters the tree. */}
       <div className="new-buttons">
         {onCreateFolder && (
           <button type="button" onClick={onCreateFolder} disabled={!canCreate}>
@@ -239,11 +236,6 @@ export function NoteList({
         <button type="button" onClick={onCreate} disabled={!canCreate}>
           New note
         </button>
-        {onCreateSubnote && (
-          <button type="button" onClick={onCreateSubnote} disabled={!canCreate}>
-            New sub-note
-          </button>
-        )}
       </div>
       {[...buildTree(notes, folders).children.values()]
         .sort((a, b) => (a.name < b.name ? -1 : 1))
