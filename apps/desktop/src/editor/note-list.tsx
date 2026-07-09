@@ -60,6 +60,9 @@ export function NoteList({
   onRename,
   onMove,
   onCreateFolder,
+  onRenameFolder,
+  onMoveFolder,
+  onDeleteFolder,
   onRestore,
   canEdit = true,
 }: {
@@ -85,14 +88,20 @@ export function NoteList({
   onMove?: (id: NoteId, folder: string) => void
   /** Create a new FOLDER in the current context. Omitted without folder support (web). */
   onCreateFolder?: () => void
+  /** Rename a folder (relocating its notes). Omitted without folder support. */
+  onRenameFolder?: (path: string, name: string) => void
+  /** Move a folder under a new parent dir (`""` = root), relocating its notes. Omitted without folders. */
+  onMoveFolder?: (path: string, parent: string) => void
+  /** Delete a folder (trashing its notes). Omitted without folder support. */
+  onDeleteFolder?: (path: string) => void
   /** Restore a soft-deleted note. */
   onRestore?: (id: NoteId) => void
   canEdit?: boolean
 }) {
-  // Inline editor for rename / move — Tauri's WKWebView has no window.prompt (it returns null), so an
-  // in-app text input is the only portable affordance (also nicer in the browser build).
+  // Inline editor for rename / move of a NOTE or a FOLDER — Tauri's WKWebView has no window.prompt
+  // (it returns null), so an in-app text input is the only portable affordance (also nicer in web).
   const [editing, setEditing] = useState<{
-    id: NoteId
+    target: { note: NoteId } | { folder: string }
     kind: "rename" | "move"
     value: string
   } | null>(null)
@@ -100,27 +109,41 @@ export function NoteList({
   const commitEdit = (): void => {
     if (editing === null) return
     const value = editing.value.trim()
-    if (editing.kind === "rename") {
-      if (value !== "") onRename?.(editing.id, value) // a blank title is a no-op (keep the current one)
+    const t = editing.target
+    if ("note" in t) {
+      if (editing.kind === "rename") {
+        if (value !== "") onRename?.(t.note, value) // a blank title is a no-op (keep the current one)
+      } else {
+        onMove?.(t.note, value) // a blank folder means the vault root
+      }
+    } else if (editing.kind === "rename") {
+      if (value !== "") onRenameFolder?.(t.folder, value)
     } else {
-      onMove?.(editing.id, value) // a blank folder means the vault root
+      onMoveFolder?.(t.folder, value) // a blank parent means the vault root
     }
     setEditing(null)
   }
 
-  // The interactive content of a node's row: the inline editor when this note is being edited, else
-  // the note button (or a folder label) plus its actions. `＋` creates a CHILD in this node's folder;
+  const parentDir = (p: string): string => (p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "")
+
+  // The interactive content of a node's row: the inline editor when this note/folder is being edited,
+  // else the note button (or folder button) plus its ✎ rename / 🗀 move / ✕ delete actions.
   // preventDefault on every button so clicking one inside a <summary> never toggles the <details>.
   const renderRow = (node: TreeNode): ReactNode => {
     const m = node.note
-    if (m !== undefined && editing?.id === m.id) {
+    const isEditing =
+      editing !== null &&
+      (m !== undefined
+        ? "note" in editing.target && editing.target.note === m.id
+        : "folder" in editing.target && editing.target.folder === node.path)
+    if (isEditing && editing !== null) {
       const isRename = editing.kind === "rename"
       return (
         <input
           // biome-ignore lint/a11y/noAutofocus: an inline editor opened by an explicit click (never on page load) should take focus so the user can type at once.
           autoFocus
-          aria-label={`${isRename ? "Rename" : "Move"} ${m.title}`}
-          placeholder={isRename ? "New title" : "Folder (blank = root)"}
+          aria-label={`${isRename ? "Rename" : "Move"} ${m?.title ?? node.name}`}
+          placeholder={isRename ? "New name" : "Folder (blank = root)"}
           value={editing.value}
           onChange={(e) => setEditing({ ...editing, value: e.target.value })}
           onKeyDown={(e) => {
@@ -160,6 +183,7 @@ export function NoteList({
         ) : (
           <span className="folder-label">📁 {node.name}</span>
         )}
+        {/* Note actions */}
         {m !== undefined && onRename && (
           <button
             type="button"
@@ -167,7 +191,7 @@ export function NoteList({
             disabled={!canEdit}
             onClick={(e) => {
               e.preventDefault()
-              setEditing({ id: m.id, kind: "rename", value: m.title })
+              setEditing({ target: { note: m.id }, kind: "rename", value: m.title })
             }}
           >
             ✎
@@ -180,7 +204,7 @@ export function NoteList({
             disabled={!canEdit}
             onClick={(e) => {
               e.preventDefault()
-              setEditing({ id: m.id, kind: "move", value: m.path ?? "" })
+              setEditing({ target: { note: m.id }, kind: "move", value: m.path ?? "" })
             }}
           >
             🗀
@@ -194,6 +218,50 @@ export function NoteList({
             onClick={(e) => {
               e.preventDefault()
               onDelete(m.id)
+            }}
+          >
+            ✕
+          </button>
+        )}
+        {/* Folder actions (a folder-only node — no note of its own) */}
+        {m === undefined && onRenameFolder && (
+          <button
+            type="button"
+            aria-label={`Rename folder ${node.name}`}
+            disabled={!canEdit}
+            onClick={(e) => {
+              e.preventDefault()
+              setEditing({ target: { folder: node.path }, kind: "rename", value: node.name })
+            }}
+          >
+            ✎
+          </button>
+        )}
+        {m === undefined && onMoveFolder && (
+          <button
+            type="button"
+            aria-label={`Move folder ${node.name}`}
+            disabled={!canEdit}
+            onClick={(e) => {
+              e.preventDefault()
+              setEditing({
+                target: { folder: node.path },
+                kind: "move",
+                value: parentDir(node.path),
+              })
+            }}
+          >
+            🗀
+          </button>
+        )}
+        {m === undefined && onDeleteFolder && (
+          <button
+            type="button"
+            aria-label={`Delete folder ${node.name}`}
+            disabled={!canEdit}
+            onClick={(e) => {
+              e.preventDefault()
+              onDeleteFolder(node.path)
             }}
           >
             ✕

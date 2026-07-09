@@ -458,6 +458,28 @@ describe("file-backed vault — on-disk specifics", () => {
     expect(reload.vault.list()).toHaveLength(3) // no note lost across a reload
   })
 
+  it("moveFolder relocates every note under a folder (rename/move a whole folder)", async () => {
+    const store = new Map<string, string>()
+    const { vault, whenLoaded, flush } = createFileBackedVault({
+      fs: fakeFs(store),
+      newId: ids("id"),
+    })
+    await whenLoaded
+    const a = vault.create("A", "# A\n")
+    vault.move?.(a.id, "work") // work/A.md
+    const b = vault.create("B", "# B\n")
+    vault.move?.(b.id, "work/sub") // work/sub/B.md (a nested note)
+    await flush()
+
+    vault.moveFolder?.("work", "archive/work") // relocate the whole "work" folder
+    await flush()
+    expect(store.has("/w/work/A.md")).toBe(false) // old folder emptied
+    expect(store.has("/w/archive/work/A.md")).toBe(true) // direct note moved
+    expect(store.has("/w/archive/work/sub/B.md")).toBe(true) // nested note moved too
+    expect(vault.list().find((m) => m.id === a.id)?.path).toBe("archive/work")
+    expect(vault.list().find((m) => m.id === b.id)?.path).toBe("archive/work/sub")
+  })
+
   it("refuses to move a note into its OWN subtree (no self-nesting)", async () => {
     const store = new Map<string, string>()
     const { vault, whenLoaded, flush } = createFileBackedVault({

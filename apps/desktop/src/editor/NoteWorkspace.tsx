@@ -5,6 +5,7 @@ import {
   can,
   type DiffChunk,
   type NoteId,
+  normalizeFolder,
   roleFor,
   type Vault,
 } from "@spherewiki/shared"
@@ -194,8 +195,59 @@ export function NoteWorkspace({
       name = `New folder ${n}`
     }
     const path = contextFolder ? `${contextFolder}/${name}` : name
-    setEmptyFolders((prev) => [...prev, path])
+    setEmptyFolders((prev) => (prev.includes(path) ? prev : [...prev, path])) // no double entry
     setSelectedFolder(path) // focus the new folder so the next create nests into it
+  }
+
+  // Rewrite the folder registry + selection when a folder at `oldPath` is renamed/moved to `newPath`
+  // (both its own entry and any subfolder under it), or DELETED when `newPath` is null.
+  const rewriteFolderPaths = (oldPath: string, newPath: string | null): void => {
+    const under = `${oldPath}/`
+    // Dedupe (Set): merging a folder onto an existing path would otherwise leave a duplicate entry.
+    setEmptyFolders((prev) => [
+      ...new Set(
+        prev.flatMap((f) => {
+          if (f === oldPath) return newPath === null ? [] : [newPath]
+          if (f.startsWith(under))
+            return newPath === null ? [] : [`${newPath}${f.slice(oldPath.length)}`]
+          return [f]
+        }),
+      ),
+    ])
+    setSelectedFolder((sel) => {
+      if (sel === null) return null
+      if (sel === oldPath) return newPath
+      if (sel.startsWith(under))
+        return newPath === null ? null : `${newPath}${sel.slice(oldPath.length)}`
+      return sel
+    })
+  }
+  const renameFolder = (oldPath: string, rawName: string): void => {
+    const name = normalizeFolder(rawName) // a safe single segment (or path); "" is a no-op
+    if (name === "") return
+    const parent = oldPath.includes("/") ? oldPath.slice(0, oldPath.lastIndexOf("/")) : ""
+    const newPath = parent ? `${parent}/${name}` : name
+    if (newPath === oldPath) return
+    ws.moveFolder(oldPath, newPath) // relocate the contained notes
+    rewriteFolderPaths(oldPath, newPath)
+  }
+  const moveFolderTo = (oldPath: string, rawParent: string): void => {
+    const parent = normalizeFolder(rawParent) // target parent dir ("" = root)
+    const folderName = oldPath.slice(oldPath.lastIndexOf("/") + 1)
+    const newPath = parent ? `${parent}/${folderName}` : folderName
+    // Refuse moving into itself / its own subtree, and no-op if unchanged.
+    if (newPath === oldPath || parent === oldPath || parent.startsWith(`${oldPath}/`)) return
+    ws.moveFolder(oldPath, newPath)
+    rewriteFolderPaths(oldPath, newPath)
+  }
+  const deleteFolder = (path: string): void => {
+    // Trash every note in the folder (recoverable via Trash), then drop the folder + its subfolders.
+    const under = `${path}/`
+    for (const m of ws.notes) {
+      const p = m.path ?? ""
+      if (p === path || p.startsWith(under)) ws.remove(m.id)
+    }
+    rewriteFolderPaths(path, null)
   }
 
   // Global keyboard shortcuts: Cmd/Ctrl-K jump-to-note, Cmd/Ctrl-B fold the sidebar (focus mode),
@@ -344,6 +396,9 @@ export function NoteWorkspace({
                     },
                     // "New folder" — an empty 📁 container UNDER the current selection.
                     onCreateFolder: createFolderInContext,
+                    onRenameFolder: renameFolder,
+                    onMoveFolder: moveFolderTo,
+                    onDeleteFolder: deleteFolder,
                   }
                 : {})}
               onRestore={(id) => ws.restore(id)}

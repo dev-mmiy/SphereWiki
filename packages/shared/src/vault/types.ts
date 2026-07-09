@@ -61,4 +61,11 @@ export interface Vault {
    * in-memory / localStorage vaults (no folder concept) leave it undefined.
    */
   move?(id: NoteId, folder: string): void
+  /**
+   * Optional: relocate a whole FOLDER — every note under `oldPath/` moves to `newPath/` (rename or
+   * move a folder), collision-resolved so no unrelated note is overwritten. Ids/titles/bodies are
+   * unchanged. No-op if `oldPath === newPath`. An empty folder has no notes, so this is a no-op there
+   * (the caller updates its own folder registry). Undefined on vaults with no folder concept.
+   */
+  moveFolder?(oldPath: string, newPath: string): void
 }

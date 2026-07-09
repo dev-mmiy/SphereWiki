@@ -95,6 +95,34 @@ describe("NoteList — folder tree (v1b)", () => {
     expect(screen.queryByLabelText(/^New note in /)).toBeNull() // creation is top-level, not per-node
   })
 
+  it("a folder has rename / move / delete actions (rename via the inline input)", () => {
+    const onRenameFolder = vi.fn()
+    const onDeleteFolder = vi.fn()
+    render(
+      <NoteList
+        notes={[note("a", "Home")]}
+        folders={["work"]}
+        activeId={asNoteId("a")}
+        onSelect={vi.fn()}
+        onCreate={vi.fn()}
+        onSelectFolder={vi.fn()}
+        onRenameFolder={onRenameFolder}
+        onMoveFolder={vi.fn()}
+        onDeleteFolder={onDeleteFolder}
+      />,
+    )
+    // Rename: ✎ on the folder opens an inline input seeded with the folder name; Enter commits.
+    fireEvent.click(screen.getByLabelText("Rename folder work"))
+    const input = screen.getByLabelText("Rename work")
+    expect((input as HTMLInputElement).value).toBe("work")
+    fireEvent.change(input, { target: { value: "Projects" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+    expect(onRenameFolder).toHaveBeenCalledWith("work", "Projects")
+    // Delete fires directly (its notes get trashed by the handler).
+    screen.getByLabelText("Delete folder work").click()
+    expect(onDeleteFolder).toHaveBeenCalledWith("work")
+  })
+
   it("renders explicit (empty) folders and selects one on click (the creation context)", () => {
     const onSelectFolder = vi.fn()
     render(

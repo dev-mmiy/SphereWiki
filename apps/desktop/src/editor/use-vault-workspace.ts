@@ -150,6 +150,8 @@ export interface VaultWorkspace {
   /** Move a note into another folder (`""` = root); organizational only — links/graph are unaffected.
    * No-op unless the vault supports folders (`canMove`). */
   move: (id: NoteId, folder: string) => void
+  /** Rename/move a whole folder: relocate every note under `oldPath/` to `newPath/`. */
+  moveFolder: (oldPath: string, newPath: string) => void
   /** Whether the active vault supports folders (the on-disk file vault does; localStorage does not) —
    * gate the sidebar's "move" affordance on it. */
   canMove: boolean
@@ -791,6 +793,13 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     vault.move(id, folder)
     setNotes(unionList())
   }
+  // Rename/move a whole FOLDER: every note under `oldPath/` relocates to `newPath/` (the vault does
+  // it collision-safely). Refresh the list so the sidebar tree reflects the new paths.
+  const moveFolder = (oldPath: string, newPath: string): void => {
+    if (vault.moveFolder === undefined || oldPath === newPath) return
+    vault.moveFolder(oldPath, newPath)
+    setNotes(unionList())
+  }
   // Delete = a revertible registry tombstone: it hides the note from the list across peers but
   // never erases its Markdown body (kept in the vault), so it can be restored and no human work
   // is silently destroyed. The reconcile fired by this set updates the list and, if this was the
@@ -953,6 +962,7 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     create,
     rename,
     move,
+    moveFolder,
     canMove,
     remove,
     restore,

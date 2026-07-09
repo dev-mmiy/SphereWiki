@@ -450,6 +450,14 @@ export function createFileBackedVault(options: FileVaultOptions): FileBackedVaul
       const target = entry.filename
       enqueue(() => move(target))
     },
+    // Relocate a whole folder: every note under `oldPath/` moves to `newPath/` (rename/move a folder).
+    // Reuses the collision-safe subtree relocator, so an unrelated note at the destination is never
+    // overwritten. Empty folders (no notes under `oldPath`) are a no-op here — the UI owns their
+    // registry. `oldPath`/`newPath` are already-safe relative dirs (the caller normalizes).
+    moveFolder: (oldPath, newPath) => {
+      if (oldPath === newPath || oldPath === "") return
+      relocateChildren(oldPath, newPath)
+    },
     // Move a note into another folder (`""` = root), keeping id/title/body — purely organizational.
     // The `.md` relocates (basename re-derived from the title, collision-resolved in the target dir).
     // A single on-disk `rename` does the move: any edit that raced it lands correctly because `write`
