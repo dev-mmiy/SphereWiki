@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { Invoke } from "../vault/tauri-vault"
-import { loadProjects, newProjectId, saveProjects } from "./project-registry"
+import { DEFAULT_PROJECT, loadProjects, newProjectId, saveProjects } from "./project-registry"
 
 const invokeWith = (loaded: string, onSave?: (content: string) => void): Invoke =>
   (async (cmd: string, args?: Record<string, unknown>) => {
@@ -15,7 +15,8 @@ const invokeWith = (loaded: string, onSave?: (content: string) => void): Invoke 
 describe("project-registry", () => {
   it("defaults to the ws-dev 'Default' project when empty (preserves an existing single vault)", async () => {
     const s = await loadProjects(invokeWith("{}"))
-    expect(s.projects).toEqual([{ id: "ws-dev", name: "Default" }])
+    expect(s.projects).toEqual([DEFAULT_PROJECT])
+    expect(s.projects[0]).toMatchObject({ type: "project", ragIncludes: [] })
     expect(s.activeId).toBe("ws-dev")
   })
 
@@ -35,7 +36,7 @@ describe("project-registry", () => {
       throw new Error(`unknown command: ${cmd}`)
     }) as Invoke
     const s = await loadProjects(rejecting)
-    expect(s.projects).toEqual([{ id: "ws-dev", name: "Default" }])
+    expect(s.projects).toEqual([DEFAULT_PROJECT])
     expect(s.activeId).toBe("ws-dev")
   })
 
@@ -70,17 +71,67 @@ describe("project-registry", () => {
     expect(newProjectId()).not.toBe(newProjectId()) // unique
   })
 
-  it("saveProjects serializes the whole registry through projects_save", async () => {
+  it("back-fills legacy entries (no type / ragIncludes) to a plain 'project'", async () => {
+    // projects.json written before type/ragIncludes existed must load without a migration.
+    const raw = JSON.stringify({
+      projects: [{ id: "ws-dev", name: "Default" }],
+      activeId: "ws-dev",
+    })
+    const s = await loadProjects(invokeWith(raw))
+    expect(s.projects[0]).toEqual({
+      id: "ws-dev",
+      name: "Default",
+      type: "project",
+      ragIncludes: [],
+    })
+  })
+
+  it("coerces an invalid type to 'project' and forces a shared workspace's ragIncludes empty", async () => {
+    const raw = JSON.stringify({
+      projects: [
+        { id: "ws-dev", name: "Default", type: "project", ragIncludes: ["shared-1"] },
+        { id: "shared-1", name: "Common", type: "shared", ragIncludes: ["ws-dev"] }, // shared ⇒ []
+        { id: "p-2", name: "Weird", type: "bogus", ragIncludes: [] }, // bad type ⇒ project
+      ],
+      activeId: "ws-dev",
+    })
+    const s = await loadProjects(invokeWith(raw))
+    const byId = Object.fromEntries(s.projects.map((p) => [p.id, p]))
+    expect(byId["shared-1"]).toMatchObject({ type: "shared", ragIncludes: [] })
+    expect(byId["p-2"]).toMatchObject({ type: "project" })
+    expect(byId["ws-dev"]?.ragIncludes).toEqual(["shared-1"]) // includes an existing shared ws
+  })
+
+  it("prunes ragIncludes to EXISTING shared workspaces (drops self / non-shared / dangling refs)", async () => {
+    const raw = JSON.stringify({
+      projects: [
+        // includes: itself (self), another project (non-shared), a missing id (dangling), one real shared
+        { id: "p-1", name: "A", type: "project", ragIncludes: ["p-1", "p-2", "ghost", "shared-1"] },
+        { id: "p-2", name: "B", type: "project", ragIncludes: [] },
+        { id: "shared-1", name: "Common", type: "shared", ragIncludes: [] },
+      ],
+      activeId: "p-1",
+    })
+    const s = await loadProjects(invokeWith(raw))
+    const p1 = s.projects.find((p) => p.id === "p-1")
+    expect(p1?.ragIncludes).toEqual(["shared-1"]) // only the real shared workspace survives
+  })
+
+  it("saveProjects serializes the whole registry through projects_save (incl. type + ragIncludes)", async () => {
     let saved = ""
+    const state = {
+      projects: [
+        { id: "ws-dev", name: "Default", type: "project" as const, ragIncludes: ["shared-1"] },
+        { id: "shared-1", name: "Common", type: "shared" as const, ragIncludes: [] },
+      ],
+      activeId: "ws-dev",
+    }
     await saveProjects(
       invokeWith("{}", (c) => {
         saved = c
       }),
-      { projects: [{ id: "ws-dev", name: "Default" }], activeId: "ws-dev" },
+      state,
     )
-    expect(JSON.parse(saved)).toEqual({
-      projects: [{ id: "ws-dev", name: "Default" }],
-      activeId: "ws-dev",
-    })
+    expect(JSON.parse(saved)).toEqual(state)
   })
 })

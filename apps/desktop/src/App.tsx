@@ -112,7 +112,12 @@ export function App() {
   }
   const createProject = (name: string): void => {
     if (invokeRef.current === null) return
-    const project: Project = { id: newProjectId(), name: name.trim() || "Untitled project" }
+    const project: Project = {
+      id: newProjectId(),
+      name: name.trim() || "Untitled project",
+      type: "project",
+      ragIncludes: [],
+    }
     const next = [...projects, project]
     setProjects(next)
     setActiveId(project.id)
