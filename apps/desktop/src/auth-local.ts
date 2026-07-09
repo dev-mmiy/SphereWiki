@@ -4,6 +4,7 @@ import {
   createMemoryAuth,
   type Role,
   type Session,
+  type WorkspaceId,
 } from "@spherewiki/shared"
 
 /**
@@ -19,12 +20,22 @@ import {
  */
 export const WORKSPACE_ID = asWorkspaceId("ws-dev")
 
-/** The local single-user session, with the given role in the local workspace. */
-export function localAuth(role: Role = "editor"): AuthProvider {
+/**
+ * The local single-user session, with the given role in the given workspace (the active local
+ * project). The local user OWNS every one of their projects, so the session must hold a membership
+ * for whichever project is active — otherwise the permission-gated paths (the on-save AI agent
+ * checks `can(session, activeProjectId, "write")`, and the index is sealed to that id) would fail
+ * closed in every project except the default one. Defaults to the fixed local workspace so the
+ * browser / single-vault case and existing callers are unchanged.
+ */
+export function localAuth(
+  role: Role = "editor",
+  workspaceId: WorkspaceId = WORKSPACE_ID,
+): AuthProvider {
   const session: Session = {
     account: { id: "local", email: "you@local" },
     orgId: "local-org",
-    memberships: [{ workspaceId: WORKSPACE_ID, role }],
+    memberships: [{ workspaceId, role }],
   }
   return createMemoryAuth(session)
 }

@@ -264,6 +264,55 @@ describe("NoteWorkspace", () => {
     ).toBe(true)
   })
 
+  it("namespaces the note-registry store by the ACTIVE project (project isolation)", () => {
+    // Regression: NoteWorkspace once keyed every per-project store by a hardcoded workspace id, so
+    // switching projects shared ONE registry — the new project's vault got materialized with the old
+    // project's note titles. The registry IndexedDB room must carry the active project's id.
+    const rooms: string[] = []
+    const spy = (_registry: unknown, room: string) => {
+      rooms.push(room)
+      return { whenLoaded: Promise.resolve(), destroy: () => {} }
+    }
+    const { unmount } = render(
+      <NoteWorkspace activeProjectId="p-clientA" registryPersistence={spy} />,
+    )
+    expect(rooms).toContain("p-clientA/__registry__")
+    expect(rooms.some((r) => r.startsWith("ws-dev/"))).toBe(false) // no leak from the default project
+    unmount()
+
+    // A second, different project uses its OWN room — the two never share a registry store.
+    rooms.length = 0
+    render(<NoteWorkspace activeProjectId="p-clientB" registryPersistence={spy} />)
+    expect(rooms).toContain("p-clientB/__registry__")
+  })
+
+  it("runs the on-save AI agent in a NON-default project (local user owns every project)", async () => {
+    // Regression: the AI agent gates on can(session, activeProjectId, "write"), and the index is
+    // sealed to the active project id. When the local session only held a membership for the fixed
+    // default workspace, "Organize with AI" returned "no write permission" in every OTHER project.
+    // With no `auth` prop the workspace derives a local session scoped to the active project.
+    render(<NoteWorkspace activeProjectId="p-clientA" />)
+    const organize = screen.getByRole("button", { name: /organize with ai/i }) as HTMLButtonElement
+    expect(organize.disabled).toBe(false) // human write gate also resolves for the active project
+    fireEvent.click(organize)
+    expect(await screen.findByText(/AI added/)).toBeTruthy() // the agent ran (not "no write permission")
+    expect(screen.queryByText(/no write permission/i)).toBeNull()
+  })
+
+  it("falls back to the default workspace id when no active project is given (browser)", () => {
+    // The browser is a single-vault app (no project registry) → the fixed local id.
+    const rooms: string[] = []
+    render(
+      <NoteWorkspace
+        registryPersistence={(_r, room) => {
+          rooms.push(room)
+          return { whenLoaded: Promise.resolve(), destroy: () => {} }
+        }}
+      />,
+    )
+    expect(rooms).toContain("ws-dev/__registry__")
+  })
+
   it("is read-only for a viewer", () => {
     render(<NoteWorkspace auth={localAuth("viewer")} />)
     expect(document.querySelector(".cm-content")?.getAttribute("contenteditable")).toBe("false")

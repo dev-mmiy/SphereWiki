@@ -161,6 +161,21 @@
   gap: 2px;
 }
 
+/* The active-project selector in the top bar (📦 + a dropdown + New project). */
+.project-switcher {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.project-switcher select {
+  background: var(--bg);
+  color: inherit;
+  border: 1px solid var(--surface-2);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-2);
+  max-width: 12rem;
+}
+
 /* The two top-level creation buttons: "New subnote" (child of the active note) then "New note". */
 .new-buttons {
   display: flex;

@@ -1,4 +1,5 @@
 mod duckdb_conformance;
+mod projects;
 mod state;
 mod vault;
 mod vector;
@@ -40,7 +41,9 @@ pub fn run() {
       vector::vector_remove,
       vector::vector_clear,
       state::state_load,
-      state::state_save
+      state::state_save,
+      projects::projects_load,
+      projects::projects_save
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

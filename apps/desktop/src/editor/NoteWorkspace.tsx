@@ -2,6 +2,7 @@ import type { Autonomy, EmbeddingProvider, OnSaveResult, VectorIndex } from "@sp
 import {
   type AuthProvider,
   asNoteId,
+  asWorkspaceId,
   can,
   type DiffChunk,
   type NoteId,
@@ -15,10 +16,14 @@ import { appTitle } from "../app-info"
 import { localAuth, WORKSPACE_ID } from "../auth-local"
 import { createAiMetricsRecorder } from "../metrics/ai-metrics"
 import { createGraphBaselineRecorder, graphSnapshot } from "../metrics/graph-growth"
+import type { Project } from "../projects/project-registry"
 import type { SyncStorage } from "../state/disk-storage"
 import { connectRegistryToServer } from "../sync/connect-registry"
 import { connectLocalPersistence } from "../sync/local-persistence"
-import { connectRegistryPersistence } from "../sync/registry-persistence"
+import {
+  type ConnectRegistryPersistence,
+  connectRegistryPersistence,
+} from "../sync/registry-persistence"
 import { AskPanel } from "./ask-panel"
 import { GraphView } from "./graph-view"
 import { DiffView, HistoryPanel } from "./history-panel"
@@ -27,6 +32,7 @@ import { MetricsPanel } from "./metrics-panel"
 import { NoteEditor } from "./NoteEditor"
 import { NoteList } from "./note-list"
 import { freshNoteTitle } from "./note-title"
+import { ProjectSwitcher } from "./project-switcher"
 import { QuickSwitcher } from "./quick-switcher"
 import { SearchPanel } from "./search-panel"
 import { ShortcutHelp } from "./shortcut-help"
@@ -62,11 +68,16 @@ function describeResult(r: OnSaveResult): string {
 }
 
 export function NoteWorkspace({
-  auth = localAuth(),
+  auth,
   vault,
   index,
   embedder,
   storage,
+  projects,
+  activeProjectId,
+  onSwitchProject,
+  onCreateProject,
+  registryPersistence = connectRegistryPersistence,
 }: {
   auth?: AuthProvider
   /** The on-disk backend under the native shell (App awaits its hydration first); web omits these. */
@@ -75,18 +86,31 @@ export function NoteWorkspace({
   embedder?: EmbeddingProvider
   /** Durable-state store: the on-disk `.spherewiki/` sidecar under Tauri, else webview localStorage. */
   storage?: SyncStorage
+  /** The local project registry (native shell) — omitted in the browser (single vault). */
+  projects?: readonly Project[]
+  activeProjectId?: string
+  onSwitchProject?: (id: string) => void
+  onCreateProject?: (name: string) => void
+  /** The note-registry local-persistence seam. Swappable so a test can assert the IndexedDB room is
+   * namespaced by the active project (project isolation); defaults to the real IndexedDB store. */
+  registryPersistence?: ConnectRegistryPersistence
 }) {
   // Under the native shell all NON-derived durable state (version history, session prefs, AI metrics,
   // graph baseline) goes through the on-disk `.spherewiki/` sidecar so it travels with the vault
   // folder; in the browser it stays in webview localStorage.
   const durable = storage ?? window.localStorage
-  // Kept-vs-reverted counters persist so they accumulate across sessions. Keyed by the local-mode
-  // WORKSPACE_ID today; when real multi-workspace switching lands, derive this key from the same
-  // workspaceId the hook uses so per-workspace metrics never share a bucket.
+  // The ACTIVE project's id namespaces every per-project store (vault + registry + version history +
+  // folders + metrics + sync rooms), so switching projects can never leak one project's data into
+  // another. `NoteWorkspace` is remounted on a switch (App keys it by project), so these keys are
+  // re-derived per project. Falls back to the fixed local id in the browser (single vault).
+  const wsId = activeProjectId ?? WORKSPACE_ID
+  const workspaceId = asWorkspaceId(wsId)
+  // Kept-vs-reverted counters persist so they accumulate across sessions. Keyed by the active
+  // project's `wsId` (the same id the hook uses) so each project's metrics live in their own bucket.
   const [aiMetricsRecorder] = useState(() =>
     createAiMetricsRecorder({
       storage: durable,
-      key: `spherewiki:aimetrics:${WORKSPACE_ID}`,
+      key: `spherewiki:aimetrics:${wsId}`,
     }),
   )
   // Baseline for the "graph growth" dogfooding signal: captured once per workspace (after
@@ -94,7 +118,7 @@ export function NoteWorkspace({
   const [graphBaseline] = useState(() =>
     createGraphBaselineRecorder({
       storage: durable,
-      key: `spherewiki:graphbaseline:${WORKSPACE_ID}`,
+      key: `spherewiki:graphbaseline:${wsId}`,
     }),
   )
   // Durable local vault (survives reload, offline); opt-in live sync via VITE_SYNC_URL.
@@ -106,12 +130,13 @@ export function NoteWorkspace({
     ...(storage !== undefined ? { vaultStorage: storage } : {}),
     syncUrl: import.meta.env.VITE_SYNC_URL,
     syncToken: import.meta.env.VITE_SYNC_TOKEN,
-    persistVaultKey: `spherewiki:vault:${WORKSPACE_ID}`,
-    persistVersionsKey: `spherewiki:versions:${WORKSPACE_ID}`,
-    persistSessionKey: `spherewiki:session:${WORKSPACE_ID}`,
+    workspaceId, // per-project registry/sync rooms + index → no cross-project leak
+    persistVaultKey: `spherewiki:vault:${wsId}`,
+    persistVersionsKey: `spherewiki:versions:${wsId}`,
+    persistSessionKey: `spherewiki:session:${wsId}`,
     localPersistence: connectLocalPersistence,
     connectRegistry: connectRegistryToServer,
-    registryPersistence: connectRegistryPersistence,
+    registryPersistence,
     aiMetricsRecorder,
   })
   const [diff, setDiff] = useState<readonly DiffChunk[] | null>(null)
@@ -131,7 +156,7 @@ export function NoteWorkspace({
   // --- First-class Folders (📁 containers, distinct from notes) ---
   // Non-empty folders come from note paths; EMPTY folders are tracked here + persisted to the
   // `.spherewiki/` sidecar (via `durable`) so they survive a reload and travel with the vault.
-  const foldersKey = `spherewiki:folders:${WORKSPACE_ID}`
+  const foldersKey = `spherewiki:folders:${wsId}`
   const [emptyFolders, setEmptyFolders] = useState<readonly string[]>(() => {
     try {
       const raw = durable.getItem(foldersKey)
@@ -280,9 +305,13 @@ export function NoteWorkspace({
   }, [ws.hydrated, ws.metrics, graphBaseline])
   const graphGrowth = graphBaseline.growth(graphSnapshot(ws.metrics))
 
-  const session = auth.session()
-  const role = session ? roleFor(session, WORKSPACE_ID) : null
-  const canWrite = session !== null && can(session, WORKSPACE_ID, "write")
+  // The local session is scoped to the ACTIVE project: the local user owns every project, so both
+  // the human write gate AND the on-save AI agent's `can(session, activeProjectId, "write")` check
+  // resolve for whichever project is open (not just the default). A passed `auth` (real accounts,
+  // tests) wins; only the local no-auth default is derived from the active workspace.
+  const session = (auth ?? localAuth("editor", workspaceId)).session()
+  const role = session ? roleFor(session, workspaceId) : null
+  const canWrite = session !== null && can(session, workspaceId, "write")
 
   const runAi = (): void => {
     if (session === null) return
@@ -326,6 +355,17 @@ export function NoteWorkspace({
           ◧
         </button>
         <h1 className="brand">{appTitle()}</h1>
+        {projects !== undefined &&
+          activeProjectId !== undefined &&
+          onSwitchProject &&
+          onCreateProject && (
+            <ProjectSwitcher
+              projects={projects}
+              activeId={activeProjectId}
+              onSwitch={onSwitchProject}
+              onCreate={onCreateProject}
+            />
+          )}
         <div className="topbar-meta">
           <SyncStatus status={ws.syncStatus} />
           <span className="who">
