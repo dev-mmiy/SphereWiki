@@ -72,6 +72,8 @@ export function NoteWorkspace({
   vault,
   index,
   embedder,
+  sharedIndexes,
+  sharedVaults,
   storage,
   projects,
   activeProjectId,
@@ -84,6 +86,10 @@ export function NoteWorkspace({
   vault?: Vault
   index?: VectorIndex
   embedder?: EmbeddingProvider
+  /** Read-only indexes + vaults of the `shared` workspaces the active project includes in its RAG
+   * scope (`ragIncludes`); index i ↔ vault i. Native shell only; omitted when nothing is included. */
+  sharedIndexes?: readonly VectorIndex[]
+  sharedVaults?: readonly Vault[]
   /** Durable-state store: the on-disk `.spherewiki/` sidecar under Tauri, else webview localStorage. */
   storage?: SyncStorage
   /** The local project registry (native shell) — omitted in the browser (single vault). */
@@ -127,6 +133,8 @@ export function NoteWorkspace({
     ...(vault !== undefined ? { vault } : {}),
     ...(index !== undefined ? { index } : {}),
     ...(embedder !== undefined ? { embedder } : {}),
+    ...(sharedIndexes !== undefined ? { sharedIndexes } : {}),
+    ...(sharedVaults !== undefined ? { sharedVaults } : {}),
     ...(storage !== undefined ? { vaultStorage: storage } : {}),
     syncUrl: import.meta.env.VITE_SYNC_URL,
     syncToken: import.meta.env.VITE_SYNC_TOKEN,

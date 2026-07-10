@@ -198,6 +198,14 @@ export interface UseVaultWorkspaceOptions {
    * omitted the hook builds an in-memory index (web / tests).
    */
   readonly index?: VectorIndex
+  /**
+   * Read-only indexes + vaults of the SHARED workspaces this project includes in its RAG scope
+   * (multi-project 2b). `sharedIndexes[i]` and `sharedVaults[i]` are the same shared workspace. The
+   * RAG retriever searches the active index + these; citation bodies + the staleness check resolve
+   * across the active + shared vaults. Empty/omitted when a project includes nothing (and in tests).
+   */
+  readonly sharedIndexes?: readonly VectorIndex[]
+  readonly sharedVaults?: readonly Vault[]
   /** When set, the active note syncs live through the super-peer at this WebSocket URL. */
   readonly syncUrl?: string
   /**
@@ -291,16 +299,23 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     const embedder = options.embedder ?? createLocalEmbedder()
     // An injected, already-hydrated index (the on-disk DuckDB store under Tauri) wins; else in-memory.
     const index = options.index ?? createMemoryVectorIndex(workspaceId, embedder.info)
+    const sharedIndexes = options.sharedIndexes ?? []
+    const sharedVaults = options.sharedVaults ?? []
+    // A retrieved hit may come from the active index OR an included shared index, so resolve the
+    // citation body (and the staleness check) across the active + shared vaults. readBody returns
+    // the embedded text (the body) so the retriever's contentHash check matches; "" for an unknown
+    // id → that hit is dropped, never served with the wrong text.
+    const readBody = (id: NoteId): string => {
+      for (const v of [vault, ...sharedVaults]) {
+        if (v.list().some((m) => m.id === id)) return parseNote(v.read(id)).body
+      }
+      return ""
+    }
     aiRef.current = {
       embedder,
       suggester: options.suggester ?? createHeuristicSuggester(),
       index,
-      // readBody returns the embedded text (the body) so the retriever's staleness check matches.
-      retriever: createRagRetriever({
-        embedder,
-        project: index,
-        readBody: (id) => parseNote(vault.read(id)).body,
-      }),
+      retriever: createRagRetriever({ embedder, project: index, shared: sharedIndexes, readBody }),
       answerer: createExtractiveAnswerer(),
     }
   }

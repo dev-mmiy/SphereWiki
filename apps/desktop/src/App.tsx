@@ -63,6 +63,11 @@ export function App() {
     }
   }, [])
 
+  // The active project's included `shared` workspace ids (its RAG scope). Joined into a stable string
+  // so the build effect rebuilds the backend when they change (the scope changed) — but not on
+  // unrelated registry edits (e.g. creating another project).
+  const ragIncludesKey = (projects.find((p) => p.id === activeId)?.ragIncludes ?? []).join("|")
+
   // Build (or rebuild, on a switch) the backend for the ACTIVE project. Flush the one we're leaving so
   // its last edit isn't lost, and destroy a backend that arrived after we already switched away.
   useEffect(() => {
@@ -70,7 +75,14 @@ export function App() {
     let alive = true
     setBackend(undefined) // show the loading state while the new project's vault hydrates
     const leaving = backendRef.current
-    createDesktopBackend(asWorkspaceId(activeId), SEED, invokeRef.current ?? undefined).then(
+    // Reconstruct the include ids from the stable key (ids are `[A-Za-z0-9_-]+`, so "|" is safe).
+    const ragIncludes = ragIncludesKey ? ragIncludesKey.split("|") : []
+    createDesktopBackend(
+      asWorkspaceId(activeId),
+      SEED,
+      invokeRef.current ?? undefined,
+      ragIncludes,
+    ).then(
       (built) => {
         if (!alive) {
           void built.flush()
@@ -92,7 +104,7 @@ export function App() {
     return () => {
       alive = false
     }
-  }, [activeId])
+  }, [activeId, ragIncludesKey])
 
   // Pending disk write-throughs are async; flush them when the window is hidden/closed.
   useEffect(() => {
@@ -142,6 +154,9 @@ export function App() {
             index: backend.index,
             embedder: backend.embedder,
             storage: backend.storage,
+            // Read-only indexes + vaults of the included shared workspaces → the retriever's RAG scope.
+            sharedIndexes: backend.shared.map((s) => s.index),
+            sharedVaults: backend.shared.map((s) => s.vault),
           }
         : {})}
       {...(isTauri() && activeId !== null

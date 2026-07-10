@@ -1,3 +1,5 @@
+import { createLocalEmbedder, createMemoryVectorIndex, reindexWorkspace } from "@spherewiki/ai"
+import { asWorkspaceId, createMemoryVault } from "@spherewiki/shared"
 import { fireEvent, render, screen, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { localAuth } from "../auth-local"
@@ -195,6 +197,36 @@ describe("NoteWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: /^ask$/i }))
     const region = await screen.findByRole("region", { name: "Ask" })
     expect(await within(region).findByRole("button", { name: "Ideas" })).toBeTruthy()
+  })
+
+  it("cites an INCLUDED shared workspace in a RAG answer (cross-workspace, read-only)", async () => {
+    // A project's RAG scope is its own notes + the shared workspaces it includes. Give the workspace
+    // an included shared workspace whose note is the ONLY source of some distinctive tokens, then ask
+    // for them: the answer must cite the SHARED note — proving the retriever searches the shared
+    // index and the cross-vault readBody resolves the citation body from the shared vault.
+    const embedder = createLocalEmbedder()
+    const sharedVault = createMemoryVault([
+      {
+        title: "Ops Runbook",
+        body: "# Ops Runbook\n\nThe Zephyr Quokka Nimbus failover playbook restarts the Xylophone cluster.",
+      },
+    ])
+    const sharedIndex = createMemoryVectorIndex(asWorkspaceId("shared-ops"), embedder.info)
+    await reindexWorkspace({ vault: sharedVault, index: sharedIndex, embedder }) // App does this at load
+    render(
+      <NoteWorkspace
+        auth={localAuth("editor")}
+        embedder={embedder}
+        sharedVaults={[sharedVault]}
+        sharedIndexes={[sharedIndex]}
+      />,
+    )
+    fireEvent.change(screen.getByLabelText(/ask the workspace/i), {
+      target: { value: "Zephyr Quokka Nimbus Xylophone failover playbook" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: /^ask$/i }))
+    const region = await screen.findByRole("region", { name: "Ask" })
+    expect(await within(region).findByRole("button", { name: "Ops Runbook" })).toBeTruthy()
   })
 
   it("deletes a note to the trash and restores it", () => {

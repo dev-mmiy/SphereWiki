@@ -25,6 +25,31 @@ export function createTauriFsPort(workspace: string, invoke: Invoke): FsPort {
 }
 
 /**
+ * Wrap an `FsPort` so every disk-MUTATING op is a no-op — the LIVE Markdown reads pass through
+ * unchanged. A project that INCLUDES a `shared` workspace for RAG opens it through this, so it can
+ * never write another workspace's Markdown. Crucially this suppresses the vault core's id self-heal
+ * writeback (an id-less note gets a session-local id in memory, which is all retrieval needs) — the
+ * shared workspace's own app remains the sole writer of its source of truth. (Its derived DuckDB
+ * index is still rebuilt from that Markdown; only Markdown writes are suppressed here.)
+ *
+ * It is also TRASH-BLIND: `listTrash`/`readTrash` are omitted, so a consumer's hydrate loads only the
+ * shared workspace's LIVE notes — matching the Markdown-only `reindex` intent (trashed notes are
+ * pruned from the vector index), so a deleted shared note can never surface as a RAG citation.
+ */
+export function readOnlyFsPort(port: FsPort): FsPort {
+  const noWrite = async (): Promise<void> => undefined
+  return {
+    listFiles: port.listFiles.bind(port),
+    readFile: port.readFile.bind(port),
+    writeFile: noWrite,
+    rename: noWrite,
+    trash: noWrite,
+    untrash: noWrite,
+    // listTrash / readTrash intentionally omitted → the shared vault is trash-blind (see above).
+  }
+}
+
+/**
  * Build the on-disk file-backed vault for a workspace under the native shell and hydrate it before
  * returning, so callers receive a vault whose `list()`/`read()` already reflect disk (a drop-in for
  * the synchronously-constructed localStorage vault). `@tauri-apps/api` is imported dynamically so
@@ -35,6 +60,9 @@ export interface TauriVaultOptions {
   /** Called when a disk write-through fails, so the failure isn't silently swallowed (M2b.2's
    * per-op isolation keeps later writes flowing, but a dropped op still needs a signal). */
   readonly onWriteError?: (error: unknown) => void
+  /** Open the vault READ-ONLY: every disk-mutating op (incl. the core's id self-heal writeback) is
+   * suppressed, so a consumer can search a SHARED workspace's notes without mutating its Markdown. */
+  readonly readOnly?: boolean
 }
 
 /**
@@ -49,8 +77,9 @@ export async function createTauriVault(
   invoke: Invoke,
   options: TauriVaultOptions = {},
 ): Promise<FileBackedVault> {
+  const port = createTauriFsPort(workspace, invoke)
   const backed = createFileBackedVault({
-    fs: createTauriFsPort(workspace, invoke),
+    fs: options.readOnly === true ? readOnlyFsPort(port) : port,
     seed,
     ...(options.newId !== undefined ? { newId: options.newId } : {}),
     ...(options.onWriteError !== undefined ? { onWriteError: options.onWriteError } : {}),

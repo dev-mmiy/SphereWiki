@@ -1,6 +1,6 @@
 import { createFileBackedVault, parseNote } from "@spherewiki/shared"
 import { describe, expect, it } from "vitest"
-import { createTauriFsPort, type Invoke } from "./tauri-vault"
+import { createTauriFsPort, createTauriVault, type Invoke } from "./tauri-vault"
 
 describe("createTauriFsPort", () => {
   it("forwards each op to the workspace-scoped Rust command with the root-relative path", async () => {
@@ -132,6 +132,56 @@ describe("Tauri file vault (adapter + core over a simulated Rust backend)", () =
     vault.create("Note", "# n\n") // its write-through will reject
     await flush()
     expect(errors).toHaveLength(1) // the failed disk write reached the handler
+  })
+
+  it("readOnly open never writes the shared workspace's Markdown (id self-heal suppressed)", async () => {
+    // A project that INCLUDES a shared workspace for RAG must never mutate its source-of-truth
+    // Markdown — not even the vault core's id self-heal writeback for an externally-authored,
+    // id-less note. Reads still work (the note is searchable via a session-local in-memory id).
+    const { invoke, files } = fakeRustBackend()
+    const idless = "# Doc\n\nshared knowledge" // no frontmatter → hydrate would self-heal an id
+
+    // A normal (writable) open self-heals the missing id straight back to disk...
+    files.set("shared-1", new Map([["Doc.md", idless]]))
+    const rw = await createTauriVault("shared-1", [], invoke, { newId: ids("rw") })
+    await rw.flush()
+    expect(parseNote(files.get("shared-1")?.get("Doc.md") ?? "").frontmatter.id).toBeTruthy()
+
+    // ...but a READ-ONLY open must leave the shared Markdown byte-identical.
+    files.set("shared-1", new Map([["Doc.md", idless]]))
+    const ro = await createTauriVault("shared-1", [], invoke, { readOnly: true, newId: ids("ro") })
+    await ro.flush()
+    expect(files.get("shared-1")?.get("Doc.md")).toBe(idless) // no writeback — untouched
+    expect(ro.vault.list()).toHaveLength(1) // yet the note is searchable in memory
+  })
+
+  it("readOnly open is trash-blind — a shared workspace's trashed notes never enter the RAG mirror", async () => {
+    // A Tauri backend exposing one LIVE note and one TRASHED note.
+    const invoke = (async (cmd: string) => {
+      switch (cmd) {
+        case "vault_list_files":
+          return ["Live.md"]
+        case "vault_read_file":
+          return "---\nid: live-1\ntitle: Live\n---\n# Live\n"
+        case "vault_list_trash":
+          return ["Deleted.md"]
+        case "vault_read_trash":
+          return "---\nid: del-1\ntitle: Deleted\n---\n# Deleted\n"
+        default:
+          return undefined
+      }
+    }) as Invoke
+
+    // A writable open loads the trash into the mirror (so the UI can show/restore it)...
+    const rw = await createTauriVault("shared-1", [], invoke)
+    expect(rw.vault.list().map((m) => m.title)).toContain("Deleted")
+
+    // ...but a read-only (shared-for-RAG) open is trash-blind, so reindex never embeds a deleted
+    // shared note and it can never surface as a citation.
+    const ro = await createTauriVault("shared-1", [], invoke, { readOnly: true })
+    const titles = ro.vault.list().map((m) => m.title)
+    expect(titles).toContain("Live")
+    expect(titles).not.toContain("Deleted")
   })
 
   it("isolates workspaces — one vault never sees another's files", async () => {
