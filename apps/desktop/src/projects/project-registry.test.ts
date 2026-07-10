@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest"
 import type { Invoke } from "../vault/tauri-vault"
-import { DEFAULT_PROJECT, loadProjects, newProjectId, saveProjects } from "./project-registry"
+import {
+  DEFAULT_PROJECT,
+  loadProjects,
+  newProjectId,
+  normalizeRagScope,
+  saveProjects,
+} from "./project-registry"
 
 const invokeWith = (loaded: string, onSave?: (content: string) => void): Invoke =>
   (async (cmd: string, args?: Record<string, unknown>) => {
@@ -64,6 +70,18 @@ describe("project-registry", () => {
     })
     const s = await loadProjects(invokeWith(raw))
     expect(s.projects.map((p) => p.id)).toEqual(["ok_1"]) // "../etc" rejected (isolation guard)
+  })
+
+  it("normalizeRagScope enforces the RAG-scope invariants on a write (shared→[], keep only existing shared)", () => {
+    const out = normalizeRagScope([
+      { id: "p-1", name: "A", type: "project", ragIncludes: ["s-1", "p-2", "ghost", "p-1"] },
+      { id: "p-2", name: "B", type: "project", ragIncludes: [] },
+      { id: "s-1", name: "Common", type: "shared", ragIncludes: ["p-1"] },
+    ])
+    const byId = Object.fromEntries(out.map((p) => [p.id, p]))
+    expect(byId["p-1"]?.ragIncludes).toEqual(["s-1"]) // dropped self / non-shared / dangling
+    expect(byId["s-1"]?.ragIncludes).toEqual([]) // a shared workspace consumes nothing
+    expect(byId["p-2"]).toBe(out[1]) // unchanged entry keeps its identity (no needless re-render)
   })
 
   it("newProjectId is a fresh, valid workspace id (p-<uuid>)", () => {

@@ -7,6 +7,7 @@ import {
   DEFAULT_PROJECT,
   loadProjects,
   newProjectId,
+  normalizeRagScope,
   type Project,
   saveProjects,
 } from "./projects/project-registry"
@@ -135,6 +136,19 @@ export function App() {
     setActiveId(project.id)
     void saveProjects(invokeRef.current, { projects: next, activeId: project.id })
   }
+  // Change a project's `type` (project ↔ shared) or its `ragIncludes` (which shared workspaces it
+  // pulls into RAG). Re-normalized so the invariants always hold (a shared workspace includes
+  // nothing; a project includes only existing shared ones), then persisted. If this touches the
+  // ACTIVE project's RAG scope, App's build effect rebuilds its backend (it keys on ragIncludesKey).
+  const updateProject = (
+    id: string,
+    patch: Partial<Pick<Project, "type" | "ragIncludes">>,
+  ): void => {
+    if (invokeRef.current === null || activeId === null) return
+    const next = normalizeRagScope(projects.map((p) => (p.id === id ? { ...p, ...patch } : p)))
+    setProjects(next)
+    void saveProjects(invokeRef.current, { projects: next, activeId })
+  }
 
   // Native: hold the loading screen until the ACTIVE project's backend is the one we're about to
   // mount. `backend === undefined` covers first hydration; `backendId !== activeId` covers the
@@ -165,6 +179,7 @@ export function App() {
             activeProjectId: activeId,
             onSwitchProject: switchProject,
             onCreateProject: createProject,
+            onUpdateProject: updateProject,
           }
         : {})}
     />

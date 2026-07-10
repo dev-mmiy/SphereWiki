@@ -63,6 +63,23 @@ function normalizeProject(v: unknown): Project | null {
   return { id: r.id, name: r.name, type, ragIncludes }
 }
 
+/**
+ * Enforce the RAG-scope invariants across a whole project list: a `shared` workspace includes
+ * nothing (it is a source, not a consumer), and a `project` may include only ids that are EXISTING
+ * `shared` workspaces (never itself, never another `project`, never a dangling id). Applied on load
+ * AND on every registry write (marking a project `shared` / editing its includes), so the persisted
+ * registry can never encode a forbidden cross-`project` bridge.
+ */
+export function normalizeRagScope(projects: readonly Project[]): Project[] {
+  const sharedIds = new Set(projects.filter((p) => p.type === "shared").map((p) => p.id))
+  return projects.map((p) => {
+    const includes =
+      p.type === "shared" ? [] : p.ragIncludes.filter((id) => id !== p.id && sharedIds.has(id))
+    // Preserve object identity when nothing changed (avoids needless React re-renders downstream).
+    return includes.length === p.ragIncludes.length ? p : { ...p, ragIncludes: includes }
+  })
+}
+
 /** Load the project registry from `<app-data>/projects.json` (via Rust). Always returns at least the
  * Default project + a valid `activeId` — a missing/corrupt registry degrades to the default, never
  * throws (so a bad file can't brick startup). */
@@ -95,15 +112,7 @@ export async function loadProjects(invoke: Invoke): Promise<ProjectsState> {
   const byId = new Map<string, Project>()
   for (const p of parsedProjects) if (!byId.has(p.id)) byId.set(p.id, p)
   const deduped = byId.size > 0 ? [...byId.values()] : [DEFAULT_PROJECT]
-  // A project may only include EXISTING `shared` workspaces — prune dangling / non-shared refs so
-  // the registry can never encode a forbidden cross-`project` read (isolation is the only bridge is
-  // an opt-in shared workspace). Done here, once every project's type is known.
-  const sharedIds = new Set(deduped.filter((p) => p.type === "shared").map((p) => p.id))
-  const list = deduped.map((p) =>
-    p.ragIncludes.length === 0
-      ? p
-      : { ...p, ragIncludes: p.ragIncludes.filter((id) => sharedIds.has(id)) },
-  )
+  const list = normalizeRagScope(deduped)
   const activeId =
     typeof obj.activeId === "string" && list.some((p) => p.id === obj.activeId)
       ? obj.activeId

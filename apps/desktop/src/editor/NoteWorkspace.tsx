@@ -79,6 +79,7 @@ export function NoteWorkspace({
   activeProjectId,
   onSwitchProject,
   onCreateProject,
+  onUpdateProject,
   registryPersistence = connectRegistryPersistence,
 }: {
   auth?: AuthProvider
@@ -97,6 +98,7 @@ export function NoteWorkspace({
   activeProjectId?: string
   onSwitchProject?: (id: string) => void
   onCreateProject?: (name: string) => void
+  onUpdateProject?: (id: string, patch: Partial<Pick<Project, "type" | "ragIncludes">>) => void
   /** The note-registry local-persistence seam. Swappable so a test can assert the IndexedDB room is
    * namespaced by the active project (project isolation); defaults to the real IndexedDB store. */
   registryPersistence?: ConnectRegistryPersistence
@@ -372,6 +374,7 @@ export function NoteWorkspace({
               activeId={activeProjectId}
               onSwitch={onSwitchProject}
               onCreate={onCreateProject}
+              {...(onUpdateProject ? { onUpdate: onUpdateProject } : {})}
             />
           )}
         <div className="topbar-meta">

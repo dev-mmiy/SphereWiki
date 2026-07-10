@@ -161,8 +161,9 @@
   gap: 2px;
 }
 
-/* The active-project selector in the top bar (📦 + a dropdown + New project). */
+/* The active-project selector in the top bar (📦 + a dropdown + New project + ⚙ settings). */
 .project-switcher {
+  position: relative; /* anchors the ⚙ settings popover */
   display: flex;
   align-items: center;
   gap: var(--space-1);
@@ -174,6 +175,50 @@
   border-radius: var(--radius-sm);
   padding: var(--space-1) var(--space-2);
   max-width: 12rem;
+}
+
+/* ⚙ settings popover: mark the project shared / pick its shared RAG sources. Anchored below the row. */
+.project-settings {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  left: 0;
+  z-index: 20;
+  min-width: 16rem;
+  max-width: 22rem;
+  padding: var(--space-3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.18);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.project-settings-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.project-settings-includes {
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.project-settings-includes legend {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  padding: 0 var(--space-1);
+}
+.project-settings .hint {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--muted);
 }
 
 /* The two top-level creation buttons: "New subnote" (child of the active note) then "New note". */
@@ -254,6 +299,12 @@ textarea {
   color: inherit;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
+}
+/* Checkboxes/radios keep their intrinsic size — the full-width rule above is for text fields. */
+input[type="checkbox"],
+input[type="radio"] {
+  width: auto;
+  padding: 0;
 }
 
 /* Editor frame */
