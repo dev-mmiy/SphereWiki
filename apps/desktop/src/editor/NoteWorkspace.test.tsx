@@ -229,6 +229,107 @@ describe("NoteWorkspace", () => {
     expect(await within(region).findByRole("button", { name: "Ops Runbook" })).toBeTruthy()
   })
 
+  it("picks up a shared workspace added to the RAG scope WITHOUT a remount (in-place scope swap)", async () => {
+    // The seamless-scope-change path: App can add/remove an included shared workspace by passing new
+    // sharedIndexes/sharedVaults to the SAME mounted workspace (no key change). The retriever must
+    // rebuild so an "Ask" searches the new scope — no reload, no remount.
+    const embedder = createLocalEmbedder()
+    const sharedVault = createMemoryVault([
+      {
+        title: "Ops Runbook",
+        body: "# Ops Runbook\n\nThe Zephyr Quokka Nimbus failover playbook restarts the Xylophone cluster.",
+      },
+    ])
+    const sharedIndex = createMemoryVectorIndex(asWorkspaceId("shared-ops"), embedder.info)
+    await reindexWorkspace({ vault: sharedVault, index: sharedIndex, embedder })
+    const ask = () => {
+      fireEvent.change(screen.getByLabelText(/ask the workspace/i), {
+        target: { value: "Zephyr Quokka Nimbus Xylophone failover playbook" },
+      })
+      fireEvent.click(screen.getByRole("button", { name: /^ask$/i }))
+    }
+
+    // Start with the shared workspace NOT in scope.
+    const { rerender } = render(
+      <NoteWorkspace
+        auth={localAuth("editor")}
+        embedder={embedder}
+        sharedVaults={[]}
+        sharedIndexes={[]}
+      />,
+    )
+    ask()
+    const region = await screen.findByRole("region", { name: "Ask" })
+    expect(within(region).queryByRole("button", { name: "Ops Runbook" })).toBeNull()
+
+    // Add it to the scope by re-rendering the same instance (no key → no remount).
+    rerender(
+      <NoteWorkspace
+        auth={localAuth("editor")}
+        embedder={embedder}
+        sharedVaults={[sharedVault]}
+        sharedIndexes={[sharedIndex]}
+      />,
+    )
+    ask()
+    expect(
+      await within(await screen.findByRole("region", { name: "Ask" })).findByRole("button", {
+        name: "Ops Runbook",
+      }),
+    ).toBeTruthy()
+  })
+
+  it("stops citing a shared workspace REMOVED from the RAG scope (in-place, no remount)", async () => {
+    // The remove direction of a seamless scope change: dropping a shared workspace's index/vault from
+    // the props must immediately stop it being searched (App narrows the live scope synchronously).
+    const embedder = createLocalEmbedder()
+    const sharedVault = createMemoryVault([
+      {
+        title: "Ops Runbook",
+        body: "# Ops Runbook\n\nThe Zephyr Quokka Nimbus failover playbook restarts the Xylophone cluster.",
+      },
+    ])
+    const sharedIndex = createMemoryVectorIndex(asWorkspaceId("shared-ops"), embedder.info)
+    await reindexWorkspace({ vault: sharedVault, index: sharedIndex, embedder })
+    const ask = () => {
+      fireEvent.change(screen.getByLabelText(/ask the workspace/i), {
+        target: { value: "Zephyr Quokka Nimbus Xylophone failover playbook" },
+      })
+      fireEvent.click(screen.getByRole("button", { name: /^ask$/i }))
+    }
+
+    const { rerender } = render(
+      <NoteWorkspace
+        auth={localAuth("editor")}
+        embedder={embedder}
+        sharedVaults={[sharedVault]}
+        sharedIndexes={[sharedIndex]}
+      />,
+    )
+    ask()
+    expect(
+      await within(await screen.findByRole("region", { name: "Ask" })).findByRole("button", {
+        name: "Ops Runbook",
+      }),
+    ).toBeTruthy()
+
+    // Remove it from scope → the retriever rebuilds and no longer searches it.
+    rerender(
+      <NoteWorkspace
+        auth={localAuth("editor")}
+        embedder={embedder}
+        sharedVaults={[]}
+        sharedIndexes={[]}
+      />,
+    )
+    ask()
+    expect(
+      within(await screen.findByRole("region", { name: "Ask" })).queryByRole("button", {
+        name: "Ops Runbook",
+      }),
+    ).toBeNull()
+  })
+
   it("deletes a note to the trash and restores it", () => {
     render(<NoteWorkspace auth={localAuth("editor")} />)
     const nav = screen.getByRole("navigation")

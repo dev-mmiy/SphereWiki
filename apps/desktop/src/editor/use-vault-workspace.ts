@@ -11,7 +11,6 @@ import {
   type NoteContext,
   type OnSaveResult,
   type RagAnswer,
-  type RagRetriever,
   reindexWorkspace,
   runOnSaveAgent,
   type SuggestionProvider,
@@ -73,6 +72,11 @@ import { createLocalStorageVersionStore } from "../version/local-version-store"
 
 /** The reserved registry room id; note ids are UUIDs and can never equal it. */
 const REGISTRY_ROOM = "__registry__"
+
+// Stable empty defaults so an omitted shared RAG scope keeps a constant identity across renders
+// (the retriever memo depends on these; a fresh `[]` each render would rebuild it needlessly).
+const EMPTY_SHARED_INDEXES: readonly VectorIndex[] = []
+const EMPTY_SHARED_VAULTS: readonly Vault[] = []
 
 const LOCAL: EditOrigin = { actor: "local", kind: "human" }
 
@@ -292,33 +296,45 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     embedder: EmbeddingProvider
     suggester: SuggestionProvider
     index: VectorIndex
-    retriever: RagRetriever
     answerer: Answerer
   } | null>(null)
   if (aiRef.current === null) {
     const embedder = options.embedder ?? createLocalEmbedder()
     // An injected, already-hydrated index (the on-disk DuckDB store under Tauri) wins; else in-memory.
     const index = options.index ?? createMemoryVectorIndex(workspaceId, embedder.info)
-    const sharedIndexes = options.sharedIndexes ?? []
-    const sharedVaults = options.sharedVaults ?? []
-    // A retrieved hit may come from the active index OR an included shared index, so resolve the
-    // citation body (and the staleness check) across the active + shared vaults. readBody returns
-    // the embedded text (the body) so the retriever's contentHash check matches; "" for an unknown
-    // id → that hit is dropped, never served with the wrong text.
+    aiRef.current = {
+      embedder,
+      suggester: options.suggester ?? createHeuristicSuggester(),
+      index,
+      answerer: createExtractiveAnswerer(),
+    }
+  }
+  const ai = aiRef.current
+  // The RAG retriever is REBUILT whenever the shared RAG scope changes — App can swap the included
+  // shared workspaces in place (adding/removing one) without remounting, so an "Ask" always searches
+  // the current scope. A retrieved hit may come from the active index OR an included shared index, so
+  // readBody resolves the citation body (and the staleness check) across the active + shared vaults;
+  // it returns the embedded text (the body) so the contentHash check matches, "" for an unknown id →
+  // that hit is dropped, never served with the wrong text.
+  const sharedIndexes = options.sharedIndexes ?? EMPTY_SHARED_INDEXES
+  const sharedVaults = options.sharedVaults ?? EMPTY_SHARED_VAULTS
+  const retriever = useMemo(() => {
     const readBody = (id: NoteId): string => {
       for (const v of [vault, ...sharedVaults]) {
         if (v.list().some((m) => m.id === id)) return parseNote(v.read(id)).body
       }
       return ""
     }
-    aiRef.current = {
-      embedder,
-      suggester: options.suggester ?? createHeuristicSuggester(),
-      index,
-      retriever: createRagRetriever({ embedder, project: index, shared: sharedIndexes, readBody }),
-      answerer: createExtractiveAnswerer(),
-    }
-  }
+    return createRagRetriever({
+      embedder: ai.embedder,
+      project: ai.index,
+      shared: sharedIndexes,
+      readBody,
+    })
+  }, [ai, vault, sharedIndexes, sharedVaults])
+  // A ref so the async aiAsk always uses the latest retriever even if the scope changed mid-flight.
+  const retrieverRef = useRef(retriever)
+  retrieverRef.current = retriever
   const aiBusyRef = useRef(false)
 
   // Kept-vs-reverted recorder (the M5 dogfooding signal): accumulates the agent's applied vs
@@ -946,11 +962,11 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     return runAgentOnActive(session, { autonomy: "auto", suggester })
   }
   const aiAsk = async (query: string): Promise<RagAnswer> => {
-    const ai = aiRef.current
-    if (ai === null || query.trim() === "") return { answer: "", citations: [] }
-    // Keep the derived index current with the Markdown (idempotent), then retrieve + answer.
+    if (query.trim() === "") return { answer: "", citations: [] }
+    // Keep the active index current with the Markdown (idempotent), then retrieve across the active +
+    // current shared scope (retrieverRef tracks in-place scope changes) + answer.
     await reindexWorkspace({ vault, index: ai.index, embedder: ai.embedder })
-    const chunks = await ai.retriever.retrieve({ text: query, k: 5 })
+    const chunks = await retrieverRef.current.retrieve({ text: query, k: 5 })
     return ai.answerer.answer(query, chunks)
   }
 

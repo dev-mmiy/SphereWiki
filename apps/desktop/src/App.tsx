@@ -1,6 +1,11 @@
-import { asWorkspaceId } from "@spherewiki/shared"
-import { useEffect, useRef, useState } from "react"
-import { createDesktopBackend, type DesktopBackend } from "./desktop-backend"
+import { useEffect, useMemo, useRef, useState } from "react"
+import {
+  createDesktopBackend,
+  type DesktopBackend,
+  loadSharedBackends,
+  type SharedBackend,
+  type SharedScope,
+} from "./desktop-backend"
 import { NoteWorkspace } from "./editor/NoteWorkspace"
 import { SEED } from "./editor/use-vault-workspace"
 import {
@@ -13,6 +18,10 @@ import {
 } from "./projects/project-registry"
 import { isTauri } from "./seams"
 import type { Invoke } from "./vault/tauri-vault"
+
+// A stable empty scope so "no shared workspaces for the active project" keeps a constant array
+// identity across renders (the hook memoizes its retriever on this).
+const NO_SHARED: readonly SharedBackend[] = []
 
 // The app shell (top bar + 3-pane layout) lives in NoteWorkspace. Under the native Tauri shell App
 // owns the PROJECT registry (multiple isolated workspaces): it loads the registry, builds the on-disk
@@ -33,6 +42,11 @@ export function App() {
   const [backendId, setBackendId] = useState<string | null>(null)
   const backendRef = useRef<DesktopBackend | null>(null)
   const invokeRef = useRef<Invoke | null>(null)
+  // The active project's RAG scope (its included shared workspaces), loaded INDEPENDENTLY of the
+  // active backend and tagged with the project it belongs to, so changing the scope updates it in
+  // place (no vault reload, no remount) and a stale scope is never shown for the wrong project.
+  const [sharedScope, setSharedScope] = useState<{ id: string; scope: SharedScope } | null>(null)
+  const sharedRef = useRef<SharedScope | null>(null)
 
   // Load the project registry once (native only) → pick the active project.
   useEffect(() => {
@@ -69,21 +83,16 @@ export function App() {
   // unrelated registry edits (e.g. creating another project).
   const ragIncludesKey = (projects.find((p) => p.id === activeId)?.ragIncludes ?? []).join("|")
 
-  // Build (or rebuild, on a switch) the backend for the ACTIVE project. Flush the one we're leaving so
-  // its last edit isn't lost, and destroy a backend that arrived after we already switched away.
+  // Build (or rebuild, on a switch) the ACTIVE project's backend (its own vault + index + storage).
+  // Depends ONLY on activeId — NOT on the RAG scope — so changing which shared workspaces the project
+  // includes never reloads its vault or remounts the workspace. Flush the one we're leaving; destroy
+  // a backend that arrived after we already switched away.
   useEffect(() => {
     if (!isTauri() || activeId === null) return
     let alive = true
     setBackend(undefined) // show the loading state while the new project's vault hydrates
     const leaving = backendRef.current
-    // Reconstruct the include ids from the stable key (ids are `[A-Za-z0-9_-]+`, so "|" is safe).
-    const ragIncludes = ragIncludesKey ? ragIncludesKey.split("|") : []
-    createDesktopBackend(
-      asWorkspaceId(activeId),
-      SEED,
-      invokeRef.current ?? undefined,
-      ragIncludes,
-    ).then(
+    createDesktopBackend(activeId, SEED, invokeRef.current ?? undefined).then(
       (built) => {
         if (!alive) {
           void built.flush()
@@ -105,11 +114,54 @@ export function App() {
     return () => {
       alive = false
     }
+  }, [activeId])
+
+  // Load (or reload) the active project's RAG scope — its included shared workspaces — independently
+  // of the active backend, so a scope change swaps them IN PLACE (no vault reload / no remount). The
+  // result is tagged with `activeId`; the render only trusts it when it matches the active project.
+  useEffect(() => {
+    if (!isTauri() || activeId === null) return
+    let alive = true
+    const ragIncludes = ragIncludesKey ? ragIncludesKey.split("|") : []
+    // Narrow the LIVE scope to the new set synchronously, so a REMOVED shared workspace stops being
+    // searched at once — the async reload below only ADDS newly-included ones (the still-included
+    // ones stay live, so adding a source never blinks the others out). Only for the same project.
+    setSharedScope((prev) =>
+      prev !== null && prev.id === activeId
+        ? {
+            id: activeId,
+            scope: {
+              shared: prev.scope.shared.filter((s) => ragIncludes.includes(s.id)),
+              flush: prev.scope.flush,
+            },
+          }
+        : prev,
+    )
+    const leaving = sharedRef.current
+    loadSharedBackends(ragIncludes, invokeRef.current ?? undefined)
+      .then((scope) => {
+        if (!alive) {
+          void scope.flush()
+          return
+        }
+        void leaving?.flush()
+        sharedRef.current = scope
+        setSharedScope({ id: activeId, scope })
+      })
+      .catch((error) => {
+        console.error("[tauri] shared RAG scope failed to load; continuing with none", error)
+      })
+    return () => {
+      alive = false
+    }
   }, [activeId, ragIncludesKey])
 
-  // Pending disk write-throughs are async; flush them when the window is hidden/closed.
+  // Pending disk write-throughs are async; flush them (active + shared) when the window hides/closes.
   useEffect(() => {
-    const flush = () => void backendRef.current?.flush()
+    const flush = () => {
+      void backendRef.current?.flush()
+      void sharedRef.current?.flush()
+    }
     document.addEventListener("visibilitychange", flush)
     window.addEventListener("beforeunload", flush)
     return () => {
@@ -117,6 +169,13 @@ export function App() {
       window.removeEventListener("beforeunload", flush)
     }
   }, [])
+
+  // The shared backends to hand the active project — only when the loaded scope is actually for it
+  // (never the previous project's, mid-switch). Memoized so identity is stable until the scope changes.
+  const sharedForActive =
+    sharedScope !== null && sharedScope.id === activeId ? sharedScope.scope.shared : NO_SHARED
+  const sharedIndexes = useMemo(() => sharedForActive.map((s) => s.index), [sharedForActive])
+  const sharedVaults = useMemo(() => sharedForActive.map((s) => s.vault), [sharedForActive])
 
   const switchProject = (id: string): void => {
     if (id === activeId || invokeRef.current === null) return
@@ -168,9 +227,10 @@ export function App() {
             index: backend.index,
             embedder: backend.embedder,
             storage: backend.storage,
-            // Read-only indexes + vaults of the included shared workspaces → the retriever's RAG scope.
-            sharedIndexes: backend.shared.map((s) => s.index),
-            sharedVaults: backend.shared.map((s) => s.vault),
+            // Read-only indexes + vaults of the included shared workspaces → the retriever's RAG
+            // scope. Swapped in place when the scope changes (the hook rebuilds its retriever).
+            sharedIndexes,
+            sharedVaults,
           }
         : {})}
       {...(isTauri() && activeId !== null

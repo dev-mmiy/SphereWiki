@@ -1,6 +1,5 @@
-import { asWorkspaceId } from "@spherewiki/shared"
 import { describe, expect, it } from "vitest"
-import { createDesktopBackend } from "./desktop-backend"
+import { createDesktopBackend, loadSharedBackends } from "./desktop-backend"
 import type { Invoke } from "./vault/tauri-vault"
 
 /**
@@ -65,31 +64,37 @@ function fakeBackend(failVectorFor?: string): Invoke {
   }) as Invoke
 }
 
-describe("createDesktopBackend — shared workspace loading (multi-project 2b)", () => {
-  it("loads the included shared workspaces for the active project's RAG scope", async () => {
+describe("createDesktopBackend — the active project's backend (multi-project 2b)", () => {
+  it("builds the active project's vault + index + storage, independent of any shared scope", async () => {
     const backend = await createDesktopBackend(
-      asWorkspaceId("active"),
+      "active",
       [{ title: "Home", body: "# Home\n" }],
       fakeBackend(),
-      ["shared-1", "shared-2"],
     )
     expect(backend.vault.list().map((m) => m.title)).toContain("Home")
-    expect(backend.shared).toHaveLength(2) // both included shared workspaces loaded
     await backend.flush()
   })
+})
 
-  it("drops a bad shared include instead of collapsing the whole backend (fail-soft)", async () => {
-    // shared-bad's vector index fails to open — an OPTIONAL include must never take the active project
-    // (and the good includes) down with it, or the app would fall back to in-webview storage and hide
-    // the active project's real on-disk notes.
-    const backend = await createDesktopBackend(
-      asWorkspaceId("active"),
-      [{ title: "Home", body: "# Home\n" }],
-      fakeBackend("shared-bad"),
-      ["shared-bad", "shared-good"],
-    )
-    expect(backend.vault.list().map((m) => m.title)).toContain("Home") // active project intact
-    expect(backend.shared).toHaveLength(1) // shared-good survived; shared-bad was dropped
-    await backend.flush()
+describe("loadSharedBackends — the active project's RAG scope (multi-project 2b)", () => {
+  it("loads each included shared workspace", async () => {
+    const scope = await loadSharedBackends(["shared-1", "shared-2"], fakeBackend())
+    expect(scope.shared).toHaveLength(2)
+    await scope.flush()
+  })
+
+  it("drops a bad include instead of failing the whole scope (fail-soft)", async () => {
+    // shared-bad's vector index fails to open — an OPTIONAL include must never fail the whole load,
+    // which App keeps separate from the active backend precisely so a bad include can't take the
+    // active project down (and drop it to the in-webview fallback, hiding its real on-disk notes).
+    const scope = await loadSharedBackends(["shared-bad", "shared-good"], fakeBackend("shared-bad"))
+    expect(scope.shared).toHaveLength(1) // shared-good survived; shared-bad was dropped
+    await scope.flush()
+  })
+
+  it("an empty scope loads nothing", async () => {
+    const scope = await loadSharedBackends([], fakeBackend())
+    expect(scope.shared).toHaveLength(0)
+    await scope.flush()
   })
 })
