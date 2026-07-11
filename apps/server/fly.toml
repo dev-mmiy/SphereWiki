@@ -8,11 +8,12 @@
 # Then the clients connect at  wss://<app-name>.fly.dev  (set VITE_SYNC_URL to it).
 # NOTE: rename `app` and set `primary_region` to your own before deploying.
 
-app = "spherewiki-sync"
-primary_region = "nrt" # Tokyo; change to your nearest Fly region
+app = "spherewiki"
+primary_region = "nrt" # Tokyo
 
-[build]
-dockerfile = "Dockerfile"
+# NOTE: deploy from the REPO ROOT so the Docker build context is the whole monorepo (the Dockerfile
+# COPYs the pnpm workspace). Point flyctl at this config + the Dockerfile explicitly:
+#   fly deploy --config apps/server/fly.toml --dockerfile apps/server/Dockerfile
 
 [env]
 PORT = "8787"
