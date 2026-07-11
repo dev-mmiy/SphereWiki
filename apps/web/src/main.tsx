@@ -4,6 +4,8 @@ import { createRoot } from "react-dom/client"
 import { WebApp } from "./App"
 import "@spherewiki/ui/tokens.css"
 import "@spherewiki/ui/base.css"
+import "@spherewiki/editor/styles/workspace.css"
+import "@spherewiki/editor/styles/components.css"
 import "./styles/web.css"
 
 // Apply the stored theme before first paint so system/forced dark doesn't flash light — same path

@@ -1,8 +1,11 @@
+import "fake-indexeddb/auto"
 import { cleanup } from "@testing-library/react"
+import { IDBFactory } from "fake-indexeddb"
 import { afterEach } from "vitest"
 
-// Unmount React trees between tests and clear any persisted theme choice (localStorage) so the
-// ThemeToggle's initial state can't leak across cases, mirroring the desktop setup.
+// The web client renders the shared NoteWorkspace, which persists its note registry to IndexedDB and
+// caches the vault in localStorage — so, like the desktop/editor setup, unmount React trees, clear
+// localStorage + the theme override, and hand each test a fresh IndexedDB so nothing leaks across.
 afterEach(() => {
   cleanup()
   try {
@@ -11,4 +14,5 @@ afterEach(() => {
     // The test env's localStorage may be unavailable/non-functional — nothing to clear.
   }
   delete document.documentElement.dataset.theme
+  globalThis.indexedDB = new IDBFactory()
 })

@@ -9,7 +9,9 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    }
+    },
+    "./styles/workspace.css": "./src/styles/workspace.css",
+    "./styles/components.css": "./src/styles/components.css"
   },
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts --clean",

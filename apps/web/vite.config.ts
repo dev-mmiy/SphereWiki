@@ -13,7 +13,7 @@ export default defineConfig({
       "@spherewiki/ui": path.resolve(import.meta.dirname, "../../packages/ui/src"),
       "@spherewiki/shared": path.resolve(import.meta.dirname, "../../packages/shared/src/index.ts"),
       "@spherewiki/ai": path.resolve(import.meta.dirname, "../../packages/ai/src/index.ts"),
-      "@spherewiki/editor": path.resolve(import.meta.dirname, "../../packages/editor/src/index.ts"),
+      "@spherewiki/editor": path.resolve(import.meta.dirname, "../../packages/editor/src"),
     },
   },
 })
