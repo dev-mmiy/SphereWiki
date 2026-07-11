@@ -1,23 +1,10 @@
+import type { Project, ProjectType } from "@spherewiki/editor"
 import type { Invoke } from "../vault/tauri-vault"
 
-/** A workspace's role in the org model (AD-7). `project` = an isolated per-engagement information
- * space; `shared` = org-common knowledge a project can pull into its RAG scope read-only. Kept as a
- * string union (not a boolean) so it can grow (e.g. `template`, `archive`) without a migration. */
-export type ProjectType = "project" | "shared"
-
-/** One local project (= workspace). Its `id` is the workspace id — an isolated `vaults/<id>/` with
- * its own Markdown + DuckDB index, so an agent/RAG scoped to it can never read another project. */
-export interface Project {
-  readonly id: string
-  readonly name: string
-  /** `project` (default) or `shared`. Drives RAG scope: only a `project` includes others, and only
-   * `shared` workspaces may be included. */
-  readonly type: ProjectType
-  /** Ids of `shared` workspaces this project pulls into its RAG scope (opt-in, read-only) — the ONLY
-   * cross-workspace bridge (a project can never include another `project`). Always empty for a
-   * `shared` workspace (a source, not a consumer). */
-  readonly ragIncludes: readonly string[]
-}
+// The `Project`/`ProjectType` shapes live in @spherewiki/editor (the editor UI renders them); this
+// module owns their DESKTOP persistence — loading/saving `projects.json` via the Tauri `invoke`
+// bridge, plus normalization. Re-export so existing desktop importers keep resolving here.
+export type { Project, ProjectType }
 
 const PROJECT_TYPES: readonly ProjectType[] = ["project", "shared"]
 

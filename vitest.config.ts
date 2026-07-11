@@ -7,7 +7,13 @@ const aiSrc = path.resolve(import.meta.dirname, "packages/ai/src/index.ts")
 // UI aliases to the src directory so the bare entry resolves to index (the CSS subpaths aren't
 // imported from tests, but a directory alias keeps it consistent with the vite build config).
 const uiSrc = path.resolve(import.meta.dirname, "packages/ui/src")
-const alias = { "@spherewiki/shared": sharedSrc, "@spherewiki/ai": aiSrc, "@spherewiki/ui": uiSrc }
+const editorSrc = path.resolve(import.meta.dirname, "packages/editor/src/index.ts")
+const alias = {
+  "@spherewiki/shared": sharedSrc,
+  "@spherewiki/ai": aiSrc,
+  "@spherewiki/ui": uiSrc,
+  "@spherewiki/editor": editorSrc,
+}
 
 export default defineConfig({
   test: {
@@ -43,6 +49,16 @@ export default defineConfig({
           include: ["apps/desktop/src/**/*.test.{ts,tsx}"],
           environment: "jsdom",
           setupFiles: [path.resolve(import.meta.dirname, "apps/desktop/vitest.setup.ts")],
+        },
+      },
+      {
+        plugins: [react()],
+        resolve: { alias },
+        test: {
+          name: "editor",
+          include: ["packages/editor/src/**/*.test.{ts,tsx}"],
+          environment: "jsdom",
+          setupFiles: [path.resolve(import.meta.dirname, "packages/editor/vitest.setup.ts")],
         },
       },
       {

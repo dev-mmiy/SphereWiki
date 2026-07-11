@@ -17,6 +17,7 @@
     "@codemirror/lang-markdown": "^6.5.0",
     "@hocuspocus/provider": "^4.3.0",
     "@spherewiki/ai": "workspace:*",
+    "@spherewiki/editor": "workspace:*",
     "@spherewiki/shared": "workspace:*",
     "@spherewiki/ui": "workspace:*",
     "@tauri-apps/api": "^2.9.0",

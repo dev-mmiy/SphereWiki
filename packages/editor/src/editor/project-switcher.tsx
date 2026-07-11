@@ -1,5 +1,5 @@
 import { useState } from "react"
-import type { Project } from "../projects/project-registry"
+import type { Project } from "../projects/types"
 
 type UpdatePatch = Partial<Pick<Project, "type" | "ragIncludes">>
 

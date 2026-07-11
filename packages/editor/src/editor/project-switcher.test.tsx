@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
-import type { Project } from "../projects/project-registry"
+import type { Project } from "../projects/types"
 import { ProjectSwitcher } from "./project-switcher"
 
 const proj = (

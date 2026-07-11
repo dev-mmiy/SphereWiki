@@ -53,6 +53,9 @@ importers:
       '@spherewiki/ai':
         specifier: workspace:*
         version: link:../../packages/ai
+      '@spherewiki/editor':
+        specifier: workspace:*
+        version: link:../../packages/editor
       '@spherewiki/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -130,6 +133,15 @@ importers:
 
   apps/web:
     dependencies:
+      '@spherewiki/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
+      '@spherewiki/editor':
+        specifier: workspace:*
+        version: link:../../packages/editor
+      '@spherewiki/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@spherewiki/ui':
         specifier: workspace:*
         version: link:../../packages/ui
@@ -164,6 +176,61 @@ importers:
       '@spherewiki/shared':
         specifier: workspace:*
         version: link:../shared
+
+  packages/editor:
+    dependencies:
+      '@codemirror/autocomplete':
+        specifier: ^6.0.0
+        version: 6.20.3
+      '@codemirror/lang-markdown':
+        specifier: ^6.5.0
+        version: 6.5.0
+      '@hocuspocus/provider':
+        specifier: ^4.3.0
+        version: 4.3.0(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31)
+      '@spherewiki/ai':
+        specifier: workspace:*
+        version: link:../ai
+      '@spherewiki/shared':
+        specifier: workspace:*
+        version: link:../shared
+      '@spherewiki/ui':
+        specifier: workspace:*
+        version: link:../ui
+      codemirror:
+        specifier: ^6.0.2
+        version: 6.0.2
+      y-codemirror.next:
+        specifier: ^0.3.5
+        version: 0.3.5(@codemirror/state@6.7.0)(@codemirror/view@6.43.2)(yjs@13.6.31)
+      y-indexeddb:
+        specifier: ^9.0.12
+        version: 9.0.12(yjs@13.6.31)
+      yjs:
+        specifier: ^13.6.31
+        version: 13.6.31
+    devDependencies:
+      '@testing-library/dom':
+        specifier: ^10.4.1
+        version: 10.4.1
+      '@testing-library/react':
+        specifier: ^16.3.2
+        version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@types/react':
+        specifier: ^19.2.17
+        version: 19.2.17
+      '@types/react-dom':
+        specifier: ^19.2.3
+        version: 19.2.3(@types/react@19.2.17)
+      fake-indexeddb:
+        specifier: ^6.2.5
+        version: 6.2.5
+      react:
+        specifier: ^19.2.7
+        version: 19.2.7
+      react-dom:
+        specifier: ^19.2.7
+        version: 19.2.7(react@19.2.7)
 
   packages/shared:
     dependencies:

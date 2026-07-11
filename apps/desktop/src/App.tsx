@@ -1,3 +1,4 @@
+import { NoteWorkspace, SEED } from "@spherewiki/editor"
 import { useEffect, useMemo, useRef, useState } from "react"
 import {
   createDesktopBackend,
@@ -6,8 +7,6 @@ import {
   type SharedBackend,
   type SharedScope,
 } from "./desktop-backend"
-import { NoteWorkspace } from "./editor/NoteWorkspace"
-import { SEED } from "./editor/use-vault-workspace"
 import {
   DEFAULT_PROJECT,
   loadProjects,

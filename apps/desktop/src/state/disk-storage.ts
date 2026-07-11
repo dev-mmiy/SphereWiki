@@ -1,7 +1,9 @@
+import type { SyncStorage } from "@spherewiki/editor"
 import type { Invoke } from "../vault/tauri-vault"
 
-/** The synchronous `Storage` slice the version store / session prefs / metrics recorders consume. */
-export type SyncStorage = Pick<Storage, "getItem" | "setItem">
+// The `SyncStorage` shape lives in @spherewiki/editor (the version store / session prefs / metrics
+// recorders consume it); this is its on-disk `.spherewiki/` implementation. Re-export for callers.
+export type { SyncStorage }
 
 export interface DiskStorage {
   readonly storage: SyncStorage

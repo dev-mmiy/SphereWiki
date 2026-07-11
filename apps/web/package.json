@@ -9,6 +9,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@spherewiki/ai": "workspace:*",
+    "@spherewiki/editor": "workspace:*",
+    "@spherewiki/shared": "workspace:*",
     "@spherewiki/ui": "workspace:*",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"

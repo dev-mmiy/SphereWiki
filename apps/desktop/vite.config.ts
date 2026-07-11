@@ -17,6 +17,7 @@ export default defineConfig({
       // UI aliases to the src *directory* so both the bare entry (→ index) and the CSS subpaths
       // (`@spherewiki/ui/tokens.css`) resolve to source without a build step.
       "@spherewiki/ui": path.resolve(import.meta.dirname, "../../packages/ui/src"),
+      "@spherewiki/editor": path.resolve(import.meta.dirname, "../../packages/editor/src/index.ts"),
     },
   },
 })
