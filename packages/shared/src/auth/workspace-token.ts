@@ -7,6 +7,10 @@
 // Platform-free: uses Web Crypto (`crypto.subtle`) + `btoa`/`atob`, available in Node 20+, browsers,
 // and workers — so the same code signs on the server and could verify anywhere.
 
+import type { WorkspaceId } from "../types"
+import { roleFor } from "./permissions"
+import type { Session } from "./types"
+
 // Web-standard runtime globals (Web Crypto + base64 + UTF-8), present in Node 20+, browsers, and
 // workers. Read off `globalThis` behind local type shims so `shared` stays platform-free (no DOM /
 // node lib), mirroring how `vault/file.ts` reaches `crypto.randomUUID`.
@@ -113,4 +117,23 @@ export async function verifyWorkspaceToken(
   }
   if ((opts.now ?? Date.now()) >= claims.exp) return null // expired
   return claims
+}
+
+/**
+ * Membership-gated issuance (M3b P3b). Mint a sync token for `workspaceId` FOR a given session — but
+ * ONLY if the session is a member of that workspace (`roleFor` non-null); a non-member gets `null`,
+ * the issuance-side expression of absolute project isolation (you can never obtain a token for a
+ * workspace you don't belong to). This is the gate a control-plane token endpoint applies after
+ * authenticating the caller: WorkOS AuthKit supplies the real `Session` (with its real memberships),
+ * and this function decides whether — and for which workspace — a token is granted. The token then
+ * lets the client join that workspace's rooms, where the super-peer's `RoomAuthorizer` re-verifies it.
+ */
+export async function issueSyncTokenForSession(
+  session: Session,
+  workspaceId: WorkspaceId,
+  secret: string,
+  opts: { ttlSeconds?: number; now?: number } = {},
+): Promise<string | null> {
+  if (roleFor(session, workspaceId) === null) return null // not a member → no token
+  return issueWorkspaceToken(workspaceId, secret, opts)
 }

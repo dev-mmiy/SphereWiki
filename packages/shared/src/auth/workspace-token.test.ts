@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest"
-import { issueWorkspaceToken, verifyWorkspaceToken } from "./workspace-token"
+import { asWorkspaceId } from "../types"
+import type { Session } from "./types"
+import {
+  issueSyncTokenForSession,
+  issueWorkspaceToken,
+  verifyWorkspaceToken,
+} from "./workspace-token"
 
 const SECRET = "test-secret-abc123"
 
@@ -37,5 +43,24 @@ describe("workspace-token", () => {
     for (const bad of [null, undefined, "", "no-dot", ".", "x.", ".y"]) {
       expect(await verifyWorkspaceToken(bad, SECRET)).toBeNull()
     }
+  })
+})
+
+describe("issueSyncTokenForSession (membership-gated issuance)", () => {
+  const session: Session = {
+    account: { id: "u1", email: "u@local" },
+    orgId: "org1",
+    memberships: [{ workspaceId: asWorkspaceId("ws-A"), role: "editor" }],
+  }
+
+  it("issues a token for a workspace the session belongs to", async () => {
+    const tok = await issueSyncTokenForSession(session, asWorkspaceId("ws-A"), SECRET)
+    expect(tok).not.toBeNull()
+    const claims = await verifyWorkspaceToken(tok, SECRET)
+    expect(claims?.workspaceId).toBe("ws-A")
+  })
+
+  it("returns null for a workspace the session is NOT a member of (no cross-workspace token)", async () => {
+    expect(await issueSyncTokenForSession(session, asWorkspaceId("ws-B"), SECRET)).toBeNull()
   })
 })
