@@ -1,0 +1,46 @@
+# Fly.io config for the SphereWiki sync super-peer. Deploy from the repo root so the Docker build
+# context is the whole monorepo:
+#
+#   fly launch --no-deploy --copy-config --dockerfile apps/server/Dockerfile   # first time
+#   fly volumes create spherewiki_data --size 1 --region <your-region>          # durable rooms
+#   fly deploy --dockerfile apps/server/Dockerfile
+#
+# Then the clients connect at  wss://<app-name>.fly.dev  (set VITE_SYNC_URL to it).
+# NOTE: rename `app` and set `primary_region` to your own before deploying.
+
+app = "spherewiki-sync"
+primary_region = "nrt" # Tokyo; change to your nearest Fly region
+
+[build]
+dockerfile = "Dockerfile"
+
+[env]
+PORT = "8787"
+SPHEREWIKI_DATA_DIR = "/data"
+
+# Durable per-room CRDT persistence — the file-persistence dir lives on a volume so rooms survive
+# restarts/redeploys. One volume = one machine; keep the app single-machine until server-side
+# shared storage (Postgres/S3) lands (P4).
+[mounts]
+source = "spherewiki_data"
+destination = "/data"
+
+# Fly terminates TLS and proxies WebSocket upgrades to the internal port, so clients use wss://.
+[http_service]
+internal_port = 8787
+force_https = true
+auto_stop_machines = "suspend"
+auto_start_machines = true
+min_machines_running = 1
+
+# Hocuspocus answers a plain HTTP GET with 200 OK, so an HTTP health check on / works.
+[[http_service.checks]]
+interval = "15s"
+timeout = "2s"
+grace_period = "10s"
+method = "GET"
+path = "/"
+
+[[vm]]
+size = "shared-cpu-1x"
+memory = "512mb"

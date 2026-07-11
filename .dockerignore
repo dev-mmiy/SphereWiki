@@ -1,0 +1,14 @@
+# Keep the Docker build context small + reproducible: no installed modules, build outputs, or
+# local caches — the image installs from the lockfile and builds fresh.
+**/node_modules
+**/dist
+**/.turbo
+**/target
+**/.spherewiki-data
+**/.next
+.git
+**/*.log
+# App-local state / test artifacts that must never enter the image.
+**/playwright-report
+**/test-results
+apps/desktop/src-tauri/target
