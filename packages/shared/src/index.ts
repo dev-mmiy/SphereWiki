@@ -7,6 +7,7 @@
 export * from "./auth/memory"
 export * from "./auth/permissions"
 export * from "./auth/types"
+export * from "./auth/workspace-token"
 export * from "./crdt/types"
 export * from "./crdt/yjs"
 export * from "./frontmatter"

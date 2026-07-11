@@ -1,5 +1,9 @@
 import { Server } from "@hocuspocus/server"
-import { createMemoryPersistence, type SyncPersistence } from "@spherewiki/shared"
+import {
+  createMemoryPersistence,
+  type SyncPersistence,
+  verifyWorkspaceToken,
+} from "@spherewiki/shared"
 import * as Y from "yjs"
 
 /**
@@ -13,6 +17,28 @@ export type RoomAuthorizer = (ctx: {
   token: string | null
   room: string
 }) => boolean | Promise<boolean>
+
+/**
+ * A `RoomAuthorizer` that admits a join only if the client presents a valid workspace-scoped token
+ * (see `issueWorkspaceToken`) whose workspace matches the room being joined. Rooms are named
+ * `<workspaceId>/<note-or-registry>`, so a token minted for workspace A can never join workspace B's
+ * rooms — transport-level project isolation. Minting requires the `secret`, so clients can't forge a
+ * token; who receives one (per authenticated membership) is decided upstream at issuance (P3b/WorkOS).
+ */
+export function createWorkspaceTokenAuthorizer(secret: string): RoomAuthorizer {
+  return async ({ token, room }) => {
+    const claims = await verifyWorkspaceToken(token, secret)
+    if (claims === null || claims.workspaceId === "") return false
+    // The room must be EXACTLY `<workspaceId>/<single segment>` — a note id or `__registry__`, never
+    // a deeper path. Real rooms always have that shape, and requiring it means a token for `team`
+    // can't reach `team/secret/note` (which would belong to a *different* workspace whose id begins
+    // with `team/`), so scoping never rests on the assumption that workspace ids are slash-free.
+    const prefix = `${claims.workspaceId}/`
+    if (!room.startsWith(prefix)) return false
+    const rest = room.slice(prefix.length)
+    return rest.length > 0 && !rest.includes("/")
+  }
+}
 
 export interface SyncServerOptions {
   port?: number

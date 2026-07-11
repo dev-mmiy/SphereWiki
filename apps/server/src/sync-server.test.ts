@@ -1,7 +1,8 @@
 import { HocuspocusProvider } from "@hocuspocus/provider"
+import { issueWorkspaceToken } from "@spherewiki/shared"
 import { describe, expect, it } from "vitest"
 import * as Y from "yjs"
-import { createSyncServer } from "./sync-server"
+import { createSyncServer, createWorkspaceTokenAuthorizer } from "./sync-server"
 
 async function waitUntil(predicate: () => boolean, timeoutMs = 8000): Promise<void> {
   const start = Date.now()
@@ -102,6 +103,79 @@ describe("websocket sync server", () => {
         expect(provider.synced).toBe(false)
       } finally {
         provider.destroy()
+        await server.destroy()
+      }
+    }, 20000)
+  })
+
+  describe("workspace-token authorizer scope (P3)", () => {
+    const SECRET = "authz-secret"
+
+    it("admits only the token's own workspace rooms, shaped `<ws>/<one segment>`", async () => {
+      const authz = createWorkspaceTokenAuthorizer(SECRET)
+      const tok = await issueWorkspaceToken("ws1", SECRET)
+      expect(await authz({ token: tok, room: "ws1/note-1" })).toBe(true)
+      expect(await authz({ token: tok, room: "ws1/__registry__" })).toBe(true)
+      // A deeper path is rejected — a `ws1` token must not reach a `ws1/secret` workspace's rooms.
+      expect(await authz({ token: tok, room: "ws1/secret/note-1" })).toBe(false)
+      expect(await authz({ token: tok, room: "ws2/note-1" })).toBe(false) // wrong workspace
+      expect(await authz({ token: tok, room: "ws1" })).toBe(false) // bare workspace, not a real room
+      expect(await authz({ token: tok, room: "ws1/" })).toBe(false) // empty note segment
+      expect(await authz({ token: null, room: "ws1/note-1" })).toBe(false) // no token
+      expect(await authz({ token: "garbage.sig", room: "ws1/note-1" })).toBe(false) // bad token
+    })
+  })
+
+  describe("workspace-token authorizer (P3, real HMAC tokens over a socket)", () => {
+    const SECRET = "server-side-sync-secret"
+
+    it("admits a valid workspace token, rejects a wrong-workspace token and a missing token", async () => {
+      const server = createSyncServer({
+        port: 0,
+        authorize: createWorkspaceTokenAuthorizer(SECRET),
+      })
+      await server.listen()
+      const url = `ws://127.0.0.1:${server.address.port}`
+      const ws1Token = await issueWorkspaceToken("ws1", SECRET)
+
+      // (a) valid token for a room in ws1 → admitted (any note/registry room under the workspace).
+      const ok = new HocuspocusProvider({
+        url,
+        name: "ws1/note-42",
+        document: new Y.Doc(),
+        token: ws1Token,
+      })
+      // (b) the same ws1 token joining ws2 → rejected (transport-level project isolation).
+      let wrongWsFailed = false
+      const wrongWs = new HocuspocusProvider({
+        url,
+        name: "ws2/note-42",
+        document: new Y.Doc(),
+        token: ws1Token,
+        onAuthenticationFailed: () => {
+          wrongWsFailed = true
+        },
+      })
+      // (c) no token → rejected.
+      let noTokenFailed = false
+      const noToken = new HocuspocusProvider({
+        url,
+        name: "ws1/note-42",
+        document: new Y.Doc(),
+        onAuthenticationFailed: () => {
+          noTokenFailed = true
+        },
+      })
+
+      try {
+        await waitUntil(() => ok.synced && wrongWsFailed && noTokenFailed)
+        expect(ok.synced).toBe(true)
+        expect(wrongWs.synced).toBe(false)
+        expect(noToken.synced).toBe(false)
+      } finally {
+        ok.destroy()
+        wrongWs.destroy()
+        noToken.destroy()
         await server.destroy()
       }
     }, 20000)

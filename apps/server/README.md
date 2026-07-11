@@ -49,10 +49,29 @@ docker build -f apps/server/Dockerfile -t spherewiki-sync .
 docker run --rm -p 8787:8787 spherewiki-sync
 ```
 
-### Status / limits
+## Access control (P3)
 
-- **Open rooms** (no auth) until P3 wires WorkOS-issued, workspace-scoped tokens into the
-  `authorize` seam. Do not put private workspaces on a public deployment before then.
+Set **`SPHEREWIKI_SYNC_SECRET`** to gate joins: every client must then present a valid
+**workspace-scoped token** whose workspace matches the room, or the connection is rejected
+(transport-level project isolation — a token for workspace A can't join B's rooms). Unset → **open
+rooms** (the zero-config local/dev default). A public deployment MUST set the secret.
+
+```bash
+# On the host (e.g. Fly), set the secret:
+fly secrets set SPHEREWIKI_SYNC_SECRET="$(openssl rand -hex 32)" --app spherewiki
+
+# Mint a token for a workspace (needs the same secret) and hand it to a client as VITE_SYNC_TOKEN:
+SPHEREWIKI_SYNC_SECRET=... node scripts/issue-sync-token.mjs ws-dev   # prints a token
+VITE_SYNC_URL=wss://spherewiki.fly.dev VITE_SYNC_TOKEN=<token> pnpm dev
+```
+
+Who receives a token for which workspace — the per-user, per-membership issuance gate — is **P3b**
+(WorkOS-authenticated). Until then, minting is manual (the secret-holder issues tokens). The token
+mechanism itself (`issueWorkspaceToken` / `verifyWorkspaceToken` in `@spherewiki/shared`, and
+`createWorkspaceTokenAuthorizer` here) is complete + tested.
+
+### Limits
+
 - **Persistence** is a single file-backed volume → keep the app **single-machine** for now. Horizontal
   scale needs server-side shared storage (Postgres + `pgvector` / S3), which lands with the control
   plane (P4).
