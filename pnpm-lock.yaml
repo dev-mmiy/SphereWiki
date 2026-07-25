@@ -123,6 +123,9 @@ importers:
       '@spherewiki/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      jose:
+        specifier: ^6.2.4
+        version: 6.2.4
       yjs:
         specifier: ^13.6.31
         version: 13.6.31
@@ -1286,6 +1289,9 @@ packages:
 
   isomorphic.js@0.2.5:
     resolution: {integrity: sha512-PIeMbHqMt4DnUP3MA/Flc0HElYjMXArsw1qwJZcm9sqR8mq3l8NYizFMty0pWwE/tzIGH3EKK5+jes5mAr85yw==}
+
+  jose@6.2.4:
+    resolution: {integrity: sha512-N8acGzVsQy6M/fjFcxtysNc4Q379TcM5dM/qKkNtsHFji88yANnXTr7BLeP75iPnFwBfQzM/jg2BZ9+HZrHCZA==}
 
   joycon@3.1.1:
     resolution: {integrity: sha512-34wB/Y7MW7bzjKRjUKTa46I2Z7eV62Rkhva+KkopW7Qvv/OSWBqvkSY7vusOPrNuZcUG3tApvdVgNB8POj3SPw==}
@@ -2616,6 +2622,8 @@ snapshots:
   is-potential-custom-element-name@1.0.1: {}
 
   isomorphic.js@0.2.5: {}
+
+  jose@6.2.4: {}
 
   joycon@3.1.1: {}
 

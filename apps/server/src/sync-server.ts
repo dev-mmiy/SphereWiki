@@ -5,6 +5,7 @@ import {
   verifyWorkspaceToken,
 } from "@spherewiki/shared"
 import * as Y from "yjs"
+import { handleTokenRequest, type TokenIssuerOptions } from "./token-endpoint"
 
 /**
  * Gates a client's join of a room. Returns true to admit, false to reject. The real impl
@@ -52,6 +53,12 @@ export interface SyncServerOptions {
    * current dev/local default); the WorkOS-backed authorizer wires in at M3b.
    */
   authorize?: RoomAuthorizer
+  /**
+   * When set, expose `POST /sync-token` (see token-endpoint.ts): an authenticated caller receives
+   * a membership-gated, workspace-scoped sync token — the control-plane issuance gate (P3b) that
+   * pairs with `authorize` verifying the token on every join.
+   */
+  tokenIssuer?: TokenIssuerOptions
 }
 
 /**
@@ -63,6 +70,7 @@ export interface SyncServerOptions {
 export function createSyncServer(options: SyncServerOptions = {}): Server {
   const persistence = options.persistence ?? createMemoryPersistence()
   const authorize = options.authorize
+  const tokenIssuer = options.tokenIssuer
   return new Server({
     port: options.port ?? 1234,
     quiet: true,
@@ -81,6 +89,23 @@ export function createSyncServer(options: SyncServerOptions = {}): Server {
           }) => {
             const ok = await authorize({ token: token === "" ? null : token, room: documentName })
             if (!ok) throw new Error("unauthorized")
+          },
+        }
+      : {}),
+    ...(tokenIssuer !== undefined
+      ? {
+          onRequest: async ({
+            request,
+            response,
+          }: {
+            request: Parameters<typeof handleTokenRequest>[0]
+            response: Parameters<typeof handleTokenRequest>[1]
+          }) => {
+            const handled = await handleTokenRequest(request, response, tokenIssuer)
+            // Hocuspocus writes its default response unless the hook chain rejects; rejecting
+            // with a FALSY value stops it silently (its handler rethrows only truthy errors).
+            // So: handled → we already responded, suppress the default; else fall through.
+            if (handled) throw null
           },
         }
       : {}),
