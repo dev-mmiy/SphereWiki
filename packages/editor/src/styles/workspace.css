@@ -4,6 +4,49 @@
  * refinement (graph, diff, history attribution, tag chips, kept-rate, …) lands in later passes.
  */
 
+/* Base element styles — global resets kept above the component rules so a broad
+ * selector is never defined after the narrower rule it refines. */
+
+/* Buttons — quiet by default; the row/list buttons read as items, not chips. */
+button {
+  padding: var(--space-1) var(--space-2);
+  background: transparent;
+  color: inherit;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+button:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+/* The current note / pressed tag reads as selected. */
+[aria-current="true"],
+[aria-pressed="true"] {
+  background: var(--surface-2);
+  color: var(--accent);
+}
+
+/* Inputs */
+input,
+textarea {
+  width: 100%;
+  padding: var(--space-1) var(--space-2);
+  background: var(--bg);
+  color: inherit;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+/* Checkboxes/radios keep their intrinsic size — the full-width rule above is for text fields. */
+input[type="checkbox"],
+input[type="radio"] {
+  width: auto;
+  padding: 0;
+}
+
 .app {
   display: grid;
   grid-template-rows: auto 1fr;
@@ -265,46 +308,6 @@
 }
 .node[open] > summary::before {
   content: "▾ ";
-}
-
-/* Buttons — quiet by default; the row/list buttons read as items, not chips. */
-button {
-  padding: var(--space-1) var(--space-2);
-  background: transparent;
-  color: inherit;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-}
-button:hover:not(:disabled) {
-  background: var(--surface-2);
-}
-button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-/* The current note / pressed tag reads as selected. */
-[aria-current="true"],
-[aria-pressed="true"] {
-  background: var(--surface-2);
-  color: var(--accent);
-}
-
-/* Inputs */
-input,
-textarea {
-  width: 100%;
-  padding: var(--space-1) var(--space-2);
-  background: var(--bg);
-  color: inherit;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-}
-/* Checkboxes/radios keep their intrinsic size — the full-width rule above is for text fields. */
-input[type="checkbox"],
-input[type="radio"] {
-  width: auto;
-  padding: 0;
 }
 
 /* Editor frame */

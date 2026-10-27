@@ -65,7 +65,7 @@ export function renameWikiLinkTargets(body: string, from: string, to: string): s
       toTarget +
       (link.anchor !== undefined ? `#${link.anchor}` : "") +
       (link.alias !== undefined ? `|${link.alias}` : "")
-    result += body.slice(last, link.start) + `[[${inner}]]`
+    result += `${body.slice(last, link.start)}[[${inner}]]`
     last = link.end
     changed = true
   }
