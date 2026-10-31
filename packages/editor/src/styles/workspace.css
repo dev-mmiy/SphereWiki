@@ -204,20 +204,81 @@ input[type="radio"] {
   gap: 2px;
 }
 
-/* The active-project selector in the top bar (📦 + a dropdown + New project + ⚙ settings). */
+/* The active-project header at the TOP of the left pane. The pane is "about" this one isolated
+ * workspace, so this names it (title + type chip + scope line + the RAG "Includes" chips a switch
+ * makes visible; the 📦/＋/⚙ controls drive a switch, a new project, its settings). */
+.project-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
 .project-switcher {
   position: relative; /* anchors the ⚙ settings popover */
   display: flex;
   align-items: center;
   gap: var(--space-1);
 }
+/* As the pane's title, the dropdown reads as a heading that fills the header row. */
 .project-switcher select {
+  flex: 1;
   background: var(--bg);
   color: inherit;
   border: 1px solid var(--surface-2);
   border-radius: var(--radius-sm);
   padding: var(--space-1) var(--space-2);
-  max-width: 12rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-align: left;
+}
+
+/* The scope line under the title: a type chip + "N notes · M shared". */
+.project-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.project-chip {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+}
+.project-chip--shared {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  border-color: var(--accent);
+}
+.project-scope {
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+/* The RAG scope (the shared workspaces the active project reads, read-only). */
+.project-includes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.project-includes ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.project-include-chip {
+  font-size: var(--text-sm);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
 }
 
 /* ⚙ settings popover: mark the project shared / pick its shared RAG sources. Anchored below the row. */

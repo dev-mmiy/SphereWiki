@@ -110,3 +110,64 @@ describe("ProjectSwitcher — shared-scope settings (multi-project 2b-2)", () =>
     expect(screen.getByRole("option", { name: "Client A" })).toBeTruthy()
   })
 })
+
+describe("ProjectSwitcher — active-project header (makes a switch visible)", () => {
+  it("shows the active project as a PROJECT chip with its scope line", () => {
+    const { container } = render(
+      <ProjectSwitcher
+        projects={[proj("ws-dev", "Default")]}
+        activeId="ws-dev"
+        onSwitch={noop}
+        onCreate={noop}
+        noteCount={3}
+      />,
+    )
+    expect(container.querySelector(".project-chip")?.textContent).toBe("project")
+    expect(container.querySelector(".project-scope")?.textContent).toBe("3 notes")
+  })
+
+  it("shows a SHARED chip for a shared workspace", () => {
+    const { container } = render(
+      <ProjectSwitcher
+        projects={[proj("shared-a", "Org", "shared")]}
+        activeId="shared-a"
+        onSwitch={noop}
+        onCreate={noop}
+        noteCount={0}
+      />,
+    )
+    expect(container.querySelector(".project-chip--shared")?.textContent).toBe("shared")
+    expect(container.querySelector(".project-scope")?.textContent).toBe("0 notes")
+  })
+
+  it("lists the shared workspaces the active project reads (RAG scope) as chips", () => {
+    render(
+      <ProjectSwitcher
+        projects={[
+          proj("shared-a", "Org", "shared"),
+          proj("ws-dev", "Default", "project", ["shared-a"]),
+        ]}
+        activeId="ws-dev"
+        onSwitch={noop}
+        onCreate={noop}
+        noteCount={5}
+      />,
+    )
+    expect(screen.getByText("Includes · read-only")).toBeTruthy()
+    expect(screen.getByText("Org")).toBeTruthy()
+    expect(screen.getByText(/5 notes · 1 shared/)).toBeTruthy()
+  })
+
+  it("shows no Includes section when the project reads nothing shared", () => {
+    render(
+      <ProjectSwitcher
+        projects={[proj("shared-a", "Org", "shared"), proj("ws-dev", "Default")]}
+        activeId="ws-dev"
+        onSwitch={noop}
+        onCreate={noop}
+      />,
+    )
+    expect(screen.queryByText("Includes · read-only")).toBeNull()
+    expect(screen.queryByText("Org")).toBeNull()
+  })
+})
