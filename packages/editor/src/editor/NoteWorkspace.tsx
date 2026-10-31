@@ -365,18 +365,6 @@ export function NoteWorkspace({
           ◧
         </button>
         <h1 className="brand">{appTitle()}</h1>
-        {projects !== undefined &&
-          activeProjectId !== undefined &&
-          onSwitchProject &&
-          onCreateProject && (
-            <ProjectSwitcher
-              projects={projects}
-              activeId={activeProjectId}
-              onSwitch={onSwitchProject}
-              onCreate={onCreateProject}
-              {...(onUpdateProject ? { onUpdate: onUpdateProject } : {})}
-            />
-          )}
         <div className="topbar-meta">
           <SyncStatus status={ws.syncStatus} />
           <span className="who">
@@ -398,6 +386,19 @@ export function NoteWorkspace({
       <div className="panes" data-sidebar={sidebarOpen} data-rail={railOpen}>
         {sidebarOpen && (
           <aside className="sidebar">
+            {projects !== undefined &&
+              activeProjectId !== undefined &&
+              onSwitchProject &&
+              onCreateProject && (
+                <ProjectSwitcher
+                  projects={projects}
+                  activeId={activeProjectId}
+                  onSwitch={onSwitchProject}
+                  onCreate={onCreateProject}
+                  noteCount={ws.notes.length}
+                  {...(onUpdateProject ? { onUpdate: onUpdateProject } : {})}
+                />
+              )}
             <SearchPanel
               search={ws.search}
               onNavigate={(id) => {
