@@ -18,7 +18,9 @@ import {
   type VectorIndex,
 } from "@spherewiki/ai"
 import {
+  type AiNoteLedger,
   addNoteTag,
+  aiNoteLedger,
   asNoteId,
   buildGraphModel,
   buildLinkGraph,
@@ -57,6 +59,7 @@ import {
 } from "@spherewiki/shared"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { WORKSPACE_ID } from "../auth-local"
+import { aiLedgerForNote } from "../metrics/ai-ledger"
 import {
   type AiEditMetrics,
   type AiMetricsRecorder,
@@ -180,6 +183,11 @@ export interface VaultWorkspace {
   readonly aiBusy: boolean
   /** Accumulated kept-vs-reverted counters for the AI agent's edits (the M5 dogfooding signal). */
   readonly aiMetrics: AiEditMetrics
+  /**
+   * The precise, DB-free per-note kept-vs-reverted contribution of the active note (M5): derived
+   * from its version timeline + current text, so it self-corrects across revert→re-apply.
+   */
+  readonly aiLedger: AiNoteLedger
   /** RAG question-answering scoped to this workspace; returns a cited answer. */
   aiAsk: (query: string) => Promise<RagAnswer>
 }
@@ -653,6 +661,21 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     [graphModel, tagIndex],
   )
 
+  // M5 precise kept-vs-reverted AI contribution ledger — derived **DB-free** from the active
+  // note's version timeline + its current text (see `aiLedgerForNote`). It recomputes whenever the
+  // note's history array changes — an AI apply, a human commit, or a revert (each calls
+  // `setVersions`) — so, unlike the running-total `aiMetrics`, it self-corrects across
+  // revert→re-apply cycles: re-applying a reverted edit brings its values back as *kept*.
+  // `versions` is the change signal AND a real input (the timeline is materialised from it);
+  // `activeNote`/`activeId`/`storeFor` are the note-scoped reads.
+  const aiLedger = useMemo<AiNoteLedger>(
+    () =>
+      activeNote === null
+        ? aiNoteLedger([], "")
+        : aiLedgerForNote(storeFor(activeId), activeNote.getText(), versions),
+    [versions, activeNote, activeId, storeFor],
+  )
+
   // The active note's tags (from its frontmatter), and the visible notes carrying a given tag —
   // both derived from the workspace's own Markdown, so tag navigation can never cross workspaces.
   const tags = useMemo<readonly string[]>(
@@ -1006,6 +1029,7 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     setAiAutonomy,
     aiBusy,
     aiMetrics,
+    aiLedger,
     aiAsk,
   }
 }

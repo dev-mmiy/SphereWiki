@@ -1,4 +1,4 @@
-import { can, extractWikiLinks, parseNote, type VersionStore } from "@spherewiki/shared"
+import { can, linksOf, parseNote, tagsOf, type VersionStore } from "@spherewiki/shared"
 import { contentHash } from "../embedding/hash"
 import { buildAgentEdit } from "../suggest/apply"
 import type { OnSaveDeps, OnSaveInput, OnSaveResult, SkipReason } from "./types"
@@ -84,13 +84,13 @@ export async function runOnSaveAgent(input: OnSaveInput, deps: OnSaveDeps): Prom
       live,
       next,
       selectedLinks.map((l) => l.title),
-      linkTargets,
+      (t) => new Set(linksOf(t)),
     )
     appliedTags = appliedTitles(
       live,
       next,
       selectedTags.map((t) => t.tag),
-      tagSet,
+      (t) => new Set(tagsOf(t)),
     )
   }
 
@@ -133,15 +133,6 @@ function headText(store: VersionStore): string | undefined {
   } finally {
     past.destroy()
   }
-}
-
-function linkTargets(text: string): Set<string> {
-  return new Set(extractWikiLinks(parseNote(text).body).map((l) => l.target))
-}
-
-function tagSet(text: string): Set<string> {
-  const tags = parseNote(text).frontmatter.tags
-  return new Set(Array.isArray(tags) ? tags.filter((t): t is string => typeof t === "string") : [])
 }
 
 /** Of the selected names, those that are present after the edit but were not before. */
