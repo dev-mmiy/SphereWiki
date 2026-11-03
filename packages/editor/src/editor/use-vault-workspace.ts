@@ -18,7 +18,11 @@ import {
   type VectorIndex,
 } from "@spherewiki/ai"
 import {
+  type AiGraphLedger,
+  type AiNoteLedger,
   addNoteTag,
+  aiGraphLedger,
+  aiNoteLedger,
   asNoteId,
   buildGraphModel,
   buildLinkGraph,
@@ -57,6 +61,7 @@ import {
 } from "@spherewiki/shared"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { WORKSPACE_ID } from "../auth-local"
+import { aiLedgerForNote } from "../metrics/ai-ledger"
 import {
   type AiEditMetrics,
   type AiMetricsRecorder,
@@ -180,6 +185,19 @@ export interface VaultWorkspace {
   readonly aiBusy: boolean
   /** Accumulated kept-vs-reverted counters for the AI agent's edits (the M5 dogfooding signal). */
   readonly aiMetrics: AiEditMetrics
+  /**
+   * The precise, self-correcting per-note kept-vs-reverted contribution of the ACTIVE note (M5):
+   * derived DB-free from its version timeline + current text, so a reverted-then-re-applied AI edit
+   * keeps its value (the running-total `aiMetrics` over-counts cumulative additions the user reverted).
+   */
+  readonly aiLedger: AiNoteLedger
+  /**
+   * The graph-wide (all-notes) kept-vs-reverted AI contribution rollup (M5): the per-note
+   * {@link AiNoteLedger}s folded to workspace scope via `aiGraphLedger`, so the AI share is the
+   * union of every note's ever-introduced links/tags (a link tagged to 5 AI notes counts once).
+   * Recomputed from the whole visible set + their timelines, not just the active note.
+   */
+  readonly aiGraph: AiGraphLedger
   /** RAG question-answering scoped to this workspace; returns a cited answer. */
   aiAsk: (query: string) => Promise<RagAnswer>
 }
@@ -653,6 +671,44 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     [graphModel, tagIndex],
   )
 
+  // M5 precise kept-vs-reverted AI contribution ledger — derived **DB-free** from the active
+  // note's version timeline + its current text (see `aiLedgerForNote`). It recomputes whenever the
+  // note's history array changes — an AI apply, a human commit, or a revert (each calls
+  // `setVersions`) — so, unlike the running-total `aiMetrics`, it self-corrects across
+  // revert→re-apply cycles: re-applying a reverted edit brings its values back as *kept*.
+  // `versions` is the change signal AND a real input (the timeline is materialised from it);
+  // `activeNote`/`activeId`/`storeFor` are the note-scoped reads.
+  const aiLedger = useMemo<AiNoteLedger>(
+    () =>
+      activeNote === null
+        ? aiNoteLedger([], "")
+        : aiLedgerForNote(storeFor(activeId), activeNote.getText(), versions),
+    [versions, activeNote, activeId, storeFor],
+  )
+
+  // M5 graph-wide rollup — fold every visible note's per-note `aiLedgerForNote` into ONE workspace
+  // `AiGraphLedger` via `aiGraphLedger`: the workspace-wide kept-vs-reverted contribution, a true
+  // *weighted* `Σkept ÷ Σcurrent` (not an average of per-note ratios, which mis-weights tiny notes
+  // against big ones). Only the ACTIVE note's timeline is held in React state, so the active note
+  // reuses `versions` + its live `getText()`; every other note materialises on demand from its own
+  // version store (`aiLedgerForNote`'s `store.list()` default) — all DB-free. Keyed on `notes` /
+  // `activeNote` / `versions`, so the rollup refreshes whenever the visible set or any note's
+  // history the user is looking at changes (a point-in-time readout, like `metrics`).
+  const graphLedger = useMemo<AiGraphLedger>(
+    () =>
+      aiGraphLedger(
+        notes.map((meta) => {
+          const text = meta.id === activeId ? (activeNote?.getText() ?? "") : vault.read(meta.id)
+          const ledger =
+            meta.id === activeId
+              ? aiLedgerForNote(storeFor(meta.id), text, versions)
+              : aiLedgerForNote(storeFor(meta.id), text)
+          return { ledger, linksCurrent: ledger.links.current, tagsCurrent: ledger.tags.current }
+        }),
+      ),
+    [notes, activeId, activeNote, versions, storeFor, vault],
+  )
+
   // The active note's tags (from its frontmatter), and the visible notes carrying a given tag —
   // both derived from the workspace's own Markdown, so tag navigation can never cross workspaces.
   const tags = useMemo<readonly string[]>(
@@ -1006,6 +1062,8 @@ export function useVaultWorkspace(options: UseVaultWorkspaceOptions = {}): Vault
     setAiAutonomy,
     aiBusy,
     aiMetrics,
+    aiLedger,
+    aiGraph: graphLedger,
     aiAsk,
   }
 }

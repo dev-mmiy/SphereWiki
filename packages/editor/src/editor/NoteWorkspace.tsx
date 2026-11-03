@@ -557,7 +557,13 @@ export function NoteWorkspace({
               />
             </CollapsiblePanel>
             <CollapsiblePanel title="Workspace">
-              <MetricsPanel metrics={ws.metrics} ai={ws.aiMetrics} growth={graphGrowth} />
+              <MetricsPanel
+                metrics={ws.metrics}
+                ai={ws.aiMetrics}
+                ledger={ws.aiLedger}
+                graphLedger={ws.aiGraph}
+                growth={graphGrowth}
+              />
             </CollapsiblePanel>
             <CollapsiblePanel title="Graph">
               <GraphView

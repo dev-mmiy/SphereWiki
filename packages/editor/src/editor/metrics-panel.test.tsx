@@ -1,4 +1,4 @@
-import type { WorkspaceMetrics } from "@spherewiki/shared"
+import { aiGraphLedger, type WorkspaceMetrics } from "@spherewiki/shared"
 import { render, screen, within } from "@testing-library/react"
 import { describe, expect, it } from "vitest"
 import type { AiEditMetrics } from "../metrics/ai-metrics"
@@ -48,5 +48,40 @@ describe("MetricsPanel", () => {
   it("shows a dash for the kept rate before any AI edit", () => {
     render(<MetricsPanel metrics={metrics} ai={{ applied: 0, reverted: 0, links: 0, tags: 0 }} />)
     expect(screen.getByText(/— kept/)).toBeTruthy()
+  })
+
+  it("renders a graph-wide AI rollup (weighted, not averaged) when one is supplied", () => {
+    // Two notes: 3 links+1 tag kept of 8+5 current, and 1 link kept of 2 → Σkept 4 of Σcurrent 13.
+    const graph = aiGraphLedger([
+      {
+        ledger: {
+          aiEdits: 3,
+          links: { ever: 4, kept: 2, reverted: 2, current: 6 },
+          tags: { ever: 3, kept: 1, reverted: 2, current: 5 },
+        },
+        linksCurrent: 6,
+        tagsCurrent: 5,
+      },
+      {
+        ledger: {
+          aiEdits: 1,
+          links: { ever: 1, kept: 1, reverted: 0, current: 2 },
+          tags: { ever: 0, kept: 0, reverted: 0, current: 0 },
+        },
+        linksCurrent: 2,
+        tagsCurrent: 0,
+      },
+    ])
+    render(<MetricsPanel metrics={metrics} ai={ai} graphLedger={graph} />)
+    const region = screen.getByRole("region", { name: "Workspace metrics" })
+    expect(within(region).getByText(/Graph-wide: 4 AI edits/)).toBeTruthy()
+    expect(within(region).getByText(/3\/8/)).toBeTruthy() // links kept / current (Σ)
+    expect(within(region).getByText(/1\/5/)).toBeTruthy() // tags kept / current
+    expect(within(region).getByText(/31%/)).toBeTruthy() // 4 of 13 = 31% weighted
+  })
+
+  it("omits the graph-wide rollup when the graph has no AI edits", () => {
+    render(<MetricsPanel metrics={metrics} ai={ai} graphLedger={aiGraphLedger([])} />)
+    expect(screen.queryByText(/Graph-wide/)).toBeNull()
   })
 })
