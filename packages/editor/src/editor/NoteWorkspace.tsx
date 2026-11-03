@@ -561,6 +561,7 @@ export function NoteWorkspace({
                 metrics={ws.metrics}
                 ai={ws.aiMetrics}
                 ledger={ws.aiLedger}
+                graphLedger={ws.aiGraph}
                 growth={graphGrowth}
               />
             </CollapsiblePanel>
