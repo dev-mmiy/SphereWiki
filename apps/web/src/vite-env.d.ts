@@ -5,7 +5,6 @@ declare module "*.css" {}
 // (which pulls the aliased editor source in) sees `import.meta.env`. Vite injects it at build time.
 interface ImportMetaEnv {
   readonly VITE_SYNC_URL?: string
-  readonly VITE_SYNC_TOKEN?: string
 }
 interface ImportMeta {
   readonly env: ImportMetaEnv

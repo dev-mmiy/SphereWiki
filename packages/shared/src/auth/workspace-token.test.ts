@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import { asWorkspaceId } from "../types"
 import type { Session } from "./types"
 import {
+  fetchSyncToken,
   issueSyncTokenForSession,
   issueWorkspaceToken,
   verifyWorkspaceToken,
@@ -62,5 +63,69 @@ describe("issueSyncTokenForSession (membership-gated issuance)", () => {
 
   it("returns null for a workspace the session is NOT a member of (no cross-workspace token)", async () => {
     expect(await issueSyncTokenForSession(session, asWorkspaceId("ws-B"), SECRET)).toBeNull()
+  })
+})
+
+// --- fetchSyncToken (the client-side wire to POST /sync-token, M3b P3a) ----------
+//
+// A stub stands in for `fetch` so the wire behavior is pinned without a socket. `shared` is
+// platform-free (no DOM/network lib), so the fake response is hand-built against the minimal
+// `FetchResponse` shape `fetchSyncToken` reads — no global `Response`/`RequestInit` needed. The
+// server's token-endpoint.test.ts covers the endpoint side; here we pin that the client POSTs to
+// the endpoint, forwards the optional Authorization header, returns the minted `{token}` JSON,
+// and surfaces HTTP / malformed failures to the caller.
+
+// The minimal fetch response `fetchSyncToken` consumes (`ok` / `status` / `json`).
+type Json = {
+  ok: boolean
+  status: number
+  json: () => Promise<unknown>
+}
+const jsonResponse = (body: unknown, status = 200): Json => ({
+  ok: status < 400,
+  status,
+  json: async () => body,
+})
+
+const calls: Array<{ url: string; init?: { method?: string; headers?: Record<string, string> } }> =
+  []
+// `fetchSyncToken`'s fetch arg is an injectable `FetchImpl`; satisfy it with the minimal shape.
+const stubFetch = (url: string, init?: { method?: string; headers?: Record<string, string> }) => {
+  calls.push({ url: String(url), init })
+  return Promise.resolve(jsonResponse({ token: "client-minted" }))
+}
+
+describe("fetchSyncToken", () => {
+  it("POSTs to the endpoint and returns the minted token", async () => {
+    calls.length = 0
+    const token = await fetchSyncToken({ url: "https://sync/sync-token" }, stubFetch)
+    expect(token).toBe("client-minted")
+    expect(calls[0]?.url).toBe("https://sync/sync-token")
+    expect(calls[0]?.init?.method).toBe("POST")
+  })
+
+  it("forwards an optional Authorization (WorkOS bearer) header with a json content-type", async () => {
+    calls.length = 0
+    await fetchSyncToken(
+      { url: "https://sync/sync-token", authHeader: "Bearer workos-jwt" },
+      stubFetch,
+    )
+    const headers = calls[0]?.init?.headers
+    expect(headers?.Authorization).toBe("Bearer workos-jwt")
+    expect(headers?.["Content-Type"]).toBe("application/json")
+  })
+
+  it("throws on a non-OK response so the caller can clear its token", async () => {
+    const notConfigured = (_url: string) => Promise.resolve(jsonResponse(null, 503))
+    await expect(fetchSyncToken({ url: "https://sync/sync-token" }, notConfigured)).rejects.toThrow(
+      /HTTP 503/,
+    )
+  })
+
+  it("throws on a malformed (token-less) response", async () => {
+    const malformed = (_url: string) => Promise.resolve(jsonResponse({ notAToken: true }))
+    await expect(fetchSyncToken({ url: "https://sync/sync-token" }, malformed)).rejects.toThrow(
+      /malformed response/,
+    )
   })
 })

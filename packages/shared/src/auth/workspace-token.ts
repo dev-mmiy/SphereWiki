@@ -24,13 +24,34 @@ interface Subtle {
   ): Promise<unknown>
   sign(algorithm: "HMAC", key: unknown, data: Uint8Array): Promise<ArrayBuffer>
 }
+// The minimal fetch shape the sync-token endpoint needs — read off `globalThis` so `shared` has no
+// DOM/node network lib. Present in Node 20+ and browsers; injected in tests.
+export interface FetchResponse {
+  ok: boolean
+  status: number
+  json(): Promise<unknown>
+}
+export interface FetchInit {
+  method?: string
+  headers?: Record<string, string>
+}
+export type FetchImpl = (url: string, init?: FetchInit) => Promise<FetchResponse>
+
 const runtime = globalThis as unknown as {
   crypto: { subtle: Subtle }
   TextEncoder: new () => { encode(input: string): Uint8Array }
   btoa(data: string): string
   atob(data: string): string
+  fetch: FetchImpl
 }
 const enc = new runtime.TextEncoder()
+
+/**
+ * A workspace-scoped sync token — an HMAC-signed, JWT-shaped string minted by the server and
+ * presented to the super-peer's `RoomAuthorizer` to join ONE workspace's rooms. Branded so a
+ * plain string (or a token for another purpose) can't be smuggled in where a real one is required.
+ */
+export type SyncToken = string & { readonly __syncToken?: unknown }
 
 /** The claims carried by a verified token. */
 export interface WorkspaceTokenClaims {
@@ -136,4 +157,67 @@ export async function issueSyncTokenForSession(
 ): Promise<string | null> {
   if (roleFor(session, workspaceId) === null) return null // not a member → no token
   return issueWorkspaceToken(workspaceId, secret, opts)
+}
+
+// --- Server-side sync-token fetch (M3b P3b) --------------------------------------
+//
+// The CLIENT side: how a desktop/web client MINTS a `SyncToken` for itself — by POSTing to
+// the server's `POST /sync-token` control-plane endpoint (see `apps/server/src/
+// token-endpoint.ts`) with its WorkOS bearer. The server verifies the bearer into a `Session`
+// and issues a workspace-scoped token ONLY if the session is a member. This replaces the old
+// static `VITE_SYNC_TOKEN` (a single shared secret shipped at build time): each client now
+// fetches its own token, and the super-peer's RoomAuthorizer re-verifies it on every join.
+//
+// Platform-free: uses the Web-standard `globalThis.fetch` + `btoa`/`atob`, so the same fetch
+// shape works in Node 20+, browsers, and workers. Callers inject a `fetchImpl` in tests.
+
+export interface SyncTokenFetchOptions {
+  /**
+   * The full URL of the sync-token control-plane endpoint.
+   * @example "https://spherewiki.fly.dev/sync-token"
+   */
+  url: string
+  /** Optional `Authorization` header (WorkOS bearer); the server verifies it into a
+   *  `Session`. Omit when the endpoint accepts an unauthenticated (local/dev) token. */
+  authHeader?: string
+}
+
+/**
+ * The sync-token fetcher — calls the server's `POST /sync-token` HTTP endpoint and returns
+ * the minted `SyncToken`. Mirrors `ConnectNote`/`ConnectRegistry` (a transport seam swappable for a
+ * fake in tests). The fetch implementation is injectable (2nd arg); the default reads Web `fetch`
+ * off `globalThis` (present in Node 20+ and browsers).
+ */
+export type SyncTokenSource = (
+  options: SyncTokenFetchOptions,
+  fetchImpl?: FetchImpl,
+) => Promise<SyncToken>
+
+/**
+ * The default token source: POSTs to `options.url` with an optional `Authorization` header and
+ * parses the JSON `{ token }` response. Throws on non-OK or malformed responses so callers can
+ * signal "no token minted" by clearing their auth state.
+ */
+export const fetchSyncToken: SyncTokenSource = async (options, fetchImpl = runtime.fetch) => {
+  const res = await fetchImpl(options.url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(options.authHeader ? { Authorization: options.authHeader } : {}),
+    },
+  })
+  if (!res.ok) {
+    throw new Error(`sync-token fetch failed: HTTP ${res.status}`)
+  }
+  const body: unknown = await res.json()
+  if (
+    typeof body !== "object" ||
+    body === null ||
+    typeof (body as { token?: unknown }).token !== "string"
+  ) {
+    throw new Error("sync-token fetch: malformed response")
+  }
+  // The wire value is a server-minted token; trust the transport (the server's
+  // RoomAuthorizer re-verifies it on every join, so a forged one never gets in).
+  return (body as { token: string }).token as SyncToken
 }
