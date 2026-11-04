@@ -60,15 +60,18 @@ rooms** (the zero-config local/dev default). A public deployment MUST set the se
 # On the host (e.g. Fly), set the secret:
 fly secrets set SPHEREWIKI_SYNC_SECRET="$(openssl rand -hex 32)" --app spherewiki
 
-# Mint a token for a workspace (needs the same secret) and hand it to a client as VITE_SYNC_TOKEN:
-SPHEREWIKI_SYNC_SECRET=... node scripts/issue-sync-token.mjs ws-dev   # prints a token
-VITE_SYNC_URL=wss://spherewiki.fly.dev VITE_SYNC_TOKEN=<token> pnpm dev
+# A client points at the sync + token endpoint (same host); its useSyncToken hook mints a
+# workspace token on start-up via POST /sync-token — no static VITE_SYNC_TOKEN shipped at build:
+VITE_SYNC_URL=wss://spherewiki.fly.dev pnpm dev:desktop   # or pnpm dev:web
 ```
 
-Who receives a token for which workspace — the per-user, per-membership issuance gate — is **P3b**
-(WorkOS-authenticated). Until then, minting is manual (the secret-holder issues tokens). The token
-mechanism itself (`issueWorkspaceToken` / `verifyWorkspaceToken` in `@spherewiki/shared`, and
-`createWorkspaceTokenAuthorizer` here) is complete + tested.
+With **no** `SPHEREWIKI_SYNC_SECRET` the server runs rooms **open** (zero-config dev sync) and its
+`POST /sync-token` answers `503 unconfigured` — the client's `useSyncToken` then simply proceeds
+without a token. Set the secret to **token-gate** rooms: the client mints its token through
+`POST /sync-token`, whose `SessionVerifier` (WorkOS `AuthKit` in prod, a dev stub in tests)
+decides which workspace's token each caller gets. The token mechanism itself
+(`issueWorkspaceToken` / `verifyWorkspaceToken` in `@spherewiki/shared`, and
+`createWorkspaceTokenAuthorizer` + `createTokenEndpoint` here) is complete + tested.
 
 ### Limits
 

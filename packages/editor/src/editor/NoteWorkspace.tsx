@@ -24,6 +24,7 @@ import {
   type ConnectRegistryPersistence,
   connectRegistryPersistence,
 } from "../sync/registry-persistence"
+import { useSyncToken } from "../sync/useSyncToken"
 import { AskPanel } from "./ask-panel"
 import { GraphView } from "./graph-view"
 import { DiffView, HistoryPanel } from "./history-panel"
@@ -131,6 +132,10 @@ export function NoteWorkspace({
   )
   // Durable local vault (survives reload, offline); opt-in live sync via VITE_SYNC_URL.
   // When syncing, a local CRDT cache (IndexedDB) keeps the room readable offline.
+  // The live sync-token is fetched from the server's `POST /sync-token` (M3b) instead of a static
+  // build-time `VITE_SYNC_TOKEN`; null until it resolves, then the connect effect re-runs with it.
+  const syncUrl = import.meta.env.VITE_SYNC_URL
+  const { token: syncToken } = useSyncToken(syncUrl)
   const ws = useVaultWorkspace({
     ...(vault !== undefined ? { vault } : {}),
     ...(index !== undefined ? { index } : {}),
@@ -138,8 +143,8 @@ export function NoteWorkspace({
     ...(sharedIndexes !== undefined ? { sharedIndexes } : {}),
     ...(sharedVaults !== undefined ? { sharedVaults } : {}),
     ...(storage !== undefined ? { vaultStorage: storage } : {}),
-    syncUrl: import.meta.env.VITE_SYNC_URL,
-    syncToken: import.meta.env.VITE_SYNC_TOKEN,
+    syncUrl,
+    syncToken: syncToken ?? undefined,
     workspaceId, // per-project registry/sync rooms + index → no cross-project leak
     persistVaultKey: `spherewiki:vault:${wsId}`,
     persistVersionsKey: `spherewiki:versions:${wsId}`,

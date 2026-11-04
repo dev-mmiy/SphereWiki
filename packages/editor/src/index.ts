@@ -23,3 +23,4 @@ export {
   type ConnectRegistryPersistence,
   connectRegistryPersistence,
 } from "./sync/registry-persistence"
+export { type SyncTokenStatus, type UseSyncTokenResult, useSyncToken } from "./sync/useSyncToken"
