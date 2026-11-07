@@ -1,8 +1,12 @@
 #!/usr/bin/env node
 // Mint a workspace-scoped sync token for the super-peer (M3b P3). The bearer may join that
-// workspace's rooms on a server configured with the SAME SPHEREWIKI_SYNC_SECRET — hand it to a
-// client as VITE_SYNC_TOKEN. Until WorkOS gates issuance per membership (P3b), this is the manual,
-// secret-holder-only way to mint tokens.
+// workspace's rooms on a server configured with the SAME SPHEREWIKI_SYNC_SECRET.
+//
+// Since P3b (the server's `POST /sync-token` endpoint, gated on workspace membership),
+// production clients mint their own token at runtime and no longer take a static
+// VITE_SYNC_TOKEN — so this script is now the DEV / open-rooms path: a manual,
+// secret-holder-only way to mint a token to point a client at when no WorkOS account
+// is provisioned yet.
 //
 //   SPHEREWIKI_SYNC_SECRET=... node scripts/issue-sync-token.mjs <workspaceId> [ttlSeconds]
 //

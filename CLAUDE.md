@@ -85,11 +85,13 @@ Toolchain: pnpm workspaces · TypeScript (`tsc`) · Biome (lint + format) · Vit
 
 ## Architecture
 
-Monorepo (pnpm workspaces). Concerns: **desktop**, **web**, **server**, **shared**, **ai**.
+Monorepo (pnpm workspaces). Concerns: **desktop**, **web**, **editor**, **ui**, **server**, **shared**, **ai**.
 
 - **Desktop (local-first):** Tauri 2 core (Rust) + TypeScript/React UI. Owns the local Markdown vault (source of truth) and a local **DuckDB** index per workspace for full-text search, the link graph, and vector search.
 - **Web:** browser client (React) with no local filesystem; reaches a workspace through the server super-peer (WebRTC P2P where possible, relay fallback).
-- **Server (control plane + super-peer):** Next.js on GCP (Cloud Run). *Control plane:* accounts/auth (WorkOS AuthKit; per-org BYO LLM keys in GCP Secret Manager), the organization & workspace registry/metadata (incl. `type`), membership/roles, billing, and usage metrics for two distinct audiences — the **service operator** (platform-wide) and the **org admin** (single-org). *Super-peer:* always-on CRDT replica + sync signaling/relay, GCP persistence (Postgres + `pgvector` for the server-side index), and the web gateway.
+- **Editor (`@spherewiki/editor`):** the **browser-safe editor core** — `useVaultWorkspace` + `NoteWorkspace` + the panels + sync transports / metrics / session / version / local-vault / `auth-local` — **extracted from the desktop app so desktop and web share one editor and can't drift** (the Tauri/DuckDB glue stays in `apps/desktop` and injects via props).
+- **UI (`@spherewiki/ui`):** the **shared design system** — design tokens, base CSS, theme, generic React primitives — reused by desktop + web.
+- **Server (control plane + super-peer):** the **super-peer** is an always-on **Hocuspocus** WebSocket CRDT replica (Node) — **interim-deployed on Fly.io** (`apps/server` + `fly.toml`; **GCP / Cloud SQL + `pgvector` + GCS per AD-8 is the M4b production target, not yet built**). It relays edits between peers, persists rooms, and is the web gateway; joins are **workspace-scoped token-gated** (open by default, gated when `SPHEREWIKI_SYNC_SECRET` is set) via `POST /sync-token`. The **control plane proper** — accounts/auth (WorkOS AuthKit; per-org BYO LLM keys → GCP Secret Manager), the organization & workspace registry/metadata (incl. `type`), membership/roles, billing, and usage metrics for two distinct audiences (the **service operator**, platform-wide, and the **org admin**, single-org) — is **post-M3b (P4)**.
 - **Shared:** Markdown + frontmatter parsing, `[[wikilink]]` / backlink / graph logic, the CRDT sync protocol, and shared TypeScript types — imported by desktop, web, and server so behavior cannot drift.
 - **AI:** the on-save agent (auto-link / auto-tag / reorganize), RAG retrieval (per-project, optionally + Shared Knowledge), and the MCP server. Uses the org's BYO key for generation; embeddings run locally/on-device (`multilingual-e5-small` via ONNX Runtime, shared by desktop and server). **The AI participates as a CRDT peer**, so its edits are merge-safe and versioned like any human edit.
 
