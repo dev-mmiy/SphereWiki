@@ -35,7 +35,7 @@
 
 ## Out of scope (deferred — see Post-MVP)
 
-Real-time co-editing (cursors/presence) · Web client · Content ingestion (PDF/Office/image OCR) · MCP server · Shared-workspace RAG-inclusion governance UI (MVP starts with project workspaces + at most one shared) · Billing/Stripe · E2E + per-org trusted worker · Mobile · SSO/SCIM · advanced reorganization.
+Real-time co-editing (cursors/presence) · Web client (**full** — a minimal web shell already renders the shared `@spherewiki/editor`, one workspace at a time; M3b P1) · Content ingestion (PDF/Office/image OCR) · MCP server · Shared-workspace RAG-inclusion governance UI (MVP starts with project workspaces + at most one shared) · Billing/Stripe · E2E + per-org trusted worker · Mobile · SSO/SCIM · advanced reorganization.
 
 > Architectural invariants still hold for deferred items (isolation, engine-agnostic versioning, control/data-plane split), so deferring is additive — not a future rewrite.
 
@@ -76,7 +76,7 @@ dependencies blocking the loop.
 ## Post-MVP (indicative order)
 
 1. **Real-time co-editing** — presence/cursors on the existing Yjs base.
-2. **Web client** — via the super-peer gateway.
+2. **Web client** — a minimal shell already renders the shared `@spherewiki/editor` (one workspace at a time; M3b P1); the full client (project switch + local vault) is Post-MVP, via the super-peer gateway.
 3. **Content ingestion** — PDF/Office, then image OCR/captioning.
 4. **Multi-project depth** — shared-workspace governance UI, more workspace attributes.
 5. **MCP server** — expose the vault to external agents.
