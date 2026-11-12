@@ -1,95 +1,69 @@
 name: desktop-native
 
-# M2b.8 part 1 + part 3 — the native shell's *authoritative* CI gate, on Linux.
+# M2b.8 leg 3 — native tauri-driver E2E harness.
 #
-# ── WHY THIS IS workflow_dispatch-ONLY (not push / PR) ──
-#   main is all-green and these legs are STAGED, NOT YET VALIDATED. The only new signal a
-#   Rust job gives is the Linux `webkit2gtk` *link* path: `cargo check` + `tauri build`.
-#   On macOS those already pass locally (`webkit2gtk` ships with Xcode; ≈39s, `Cargo.lock`
-#   committed), so a macOS runner adds NO new signal. tauri-driver drives only Linux/
-#   webkit2gtk (NOT macOS/WKWebView), so native E2E can only be exercised on Linux.
-#   Wiring this on push/PR would risk a red gate on an all-green main (any runner missing
-#   the webkits/gtk system libs fails the link), so it is OPT-IN: hand-run it once a Linux
-#   runner exists. Decision log (docs/Todo.md, M2b.8): "fold part 1 into part 3 and land
-#   together on a Linux runner" (2026-11-04); this staging was added 2026-11-07 per a
-#   maintainer override — STAGED but INERT, so it cannot turn main red.
+# ── PROMOTION STATUS (2026-11-12, PR 12) ──
+#   Legs 1 (cargo check) + 2 (tauri build) are now in `.github/workflows/ci.yml`
+#   as the additive `rust` job, on `push`/`pull_request` — first Linux run was
+#   green (workflow_dispatch run 43135310353, main @ f1f9845, ~21m54s on Ubuntu
+#   26). This file is now a *placeholder* for leg 3 only.
 #
-# ── WHAT THIS JOB DOES (once run on a Linux runner) ──
-#   1. cargo check   — the Rust gate (validates the webkit2gtk / wry link on Linux).
-#   2. tauri build    — produces the native binary (the link + native-compile signal).
-#   3. native E2E     — tauri-driver-driven, documented as a PENDING part-3 leg (below).
+#   When the tauri-driver E2E harness lands in
+#   `apps/desktop/src-tauri/tests/` (a `tauri-test` crate driving `tauri-driver`),
+#   the leg-3 step is promoted into `ci.yml`'s `rust` job (after the `cargo check`/
+#   `tauri build` legs) and this file is deleted. Until then, leg 3 is a documented
+#   no-op gated on the `include_e2e` `workflow_dispatch` input.
 #
-# ── WHEN TO PROMOTE THIS TO push/PR ──
-#   When a Linux runner is provisioned AND legs 1+2 go green at least once, promote them
-#   into .github/workflows/ci.yml (as the additive Rust job), and promote leg 3 when the
-#   tauri-driver harness lands. Remove this whole file then.
+# ── WHY LEG 3 IS NOT on push/PR ──
+#   1. The harness itself does not exist yet — it is the M2b.8 part 3 work that
+#      lands in `apps/desktop/src-tauri/tests/` and is gated on a `tauri-test`
+#      crate (a fresh Cargo dependency).
+#   2. tauri-driver drives ONLY Linux/webkit2gtk — macOS's WKWebView is
+#      undrivable — so this leg's signal is *Linux CI only*.
+#   3. Binding it on push/PR before the harness exists would be a red signal with
+#      no content (the step would no-op or skip, but the gate noise would be a
+#      real cost on every PR).
+#
+# ── LEG 3's eventual shape (when the harness lands) ──
+#   1. `cargo check` + `tauri build --no-bundle --debug` (already in ci.yml's `rust` job).
+#   2. `pnpm --filter @spherewiki/desktop exec tauri-driver` — drives a test-build
+#      of the binary + `eval_js` against the webview to exercise the
+#      fs + DuckDB path end-to-end. The browser Playwright suite has no
+#      filesystem, so it can't reach this signal.
+#
+# Promotion path (docs/Todo.md, M2b.8 parts 1 + 3, "Promotion path"):
+#   (a) legs 1+2 green once → move them into ci.yml ✅ (this PR)
+#   (b) leg 3 green when the harness ships → promote the native-E2E leg
+#   (c) delete this file once fully absorbed
 
 on:
   workflow_dispatch:
-    # Optional future knob for leg 3; off by default — no native E2E harness exists yet.
+    # Keep the knob so the leg-3 step's `if:` gate has a real input once the
+    # harness lands; off by default because the harness does not exist yet.
     inputs:
       include_e2e:
-        description: "M2b.8 part 3 — attempt the native tauri-driver E2E leg (experimental; harness not yet built)."
+        description: "M2b.8 part 3 — run the native tauri-driver E2E leg (experimental; harness not yet built)."
         type: boolean
         default: false
 
 jobs:
   native:
-    name: rust · tauri (Linux, webkit2gtk)
+    name: rust · tauri (Linux, webkit2gtk) — leg 3 placeholder
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      # Mirrors .tool-versions (rust 1.96.1) so the link check reproduces the pinned
-      # toolchain, not the runner's distro Rust.
-      - name: "Rust toolchain (mirrors .tool-versions — rust 1.96.1)"
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: "1.96.1"
-
-      - uses: pnpm/action-setup@v4 # reads the pnpm version from package.json "packageManager"
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      # Tauri 2 (wry → webkit2gtk-sys 4.1) links these Linux system libs; they ship with
-      # Xcode on macOS, which is exactly why this is Linux-only. This apt set IS the "one
-      # new signal" — the webkit2gtk link path a bare ubuntu runner can't do without it.
-      - name: Install Tauri 2 Linux system deps (webkit2gtk / gtk / appindicator / rsvg)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libgtk-3-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev
-
-      - run: pnpm install --frozen-lockfile
-
-      # (1) cargo check — the Rust gate; proves the webkit2gtk link on Linux.
-      - name: cargo check
-        run: pnpm --filter @spherewiki/desktop run check:rust
-
-      # (2) tauri build — the link + native-compile signal. `--no-bundle` skips the slow
-      #     .deb/.appimage installer packaging (a release path, not the CI gate) and needs
-      #     neither dpkg nor fpm; the signal we want is "the binary links + the native code
-      #     compiles". (tauri.conf's `beforeBuildCommand: pnpm build` builds the frontend
-      #     dist first, so this also exercises the native↔frontend build wiring.)
-      - name: tauri build (binary, no installer packaging)
-        run: pnpm --filter @spherewiki/desktop exec tauri build --no-bundle --debug
-
-      # (3) native E2E (part 3) — PENDING. tauri-driver launches a test-build of the app and
-      #     drives the webview via `eval_js`; it is the ONLY way to exercise the fs + DuckDB
-      #     path end-to-end (the browser Playwright suite has no filesystem, so it can't).
-      #     No native E2E harness exists yet — it is the work that lands in
-      #     src-tauri/tests/ + a tauri-test crate — so this leg is a no-op-with-notes until
-      #     then: a real step is `pnpm --filter @spherewiki/desktop exec tauri-driver`.
-      #     macOS's WKWebView is NOT tauri-driver-drivable, so verify the native shell
-      #     manually on Linux or via the /verify skill in the meantime.
+      # (3) native E2E (part 3) — PENDING. tauri-driver launches a test-build of
+      #     the app and drives the webview via `eval_js`; it is the only way to
+      #     exercise the fs + DuckDB path end-to-end (the browser Playwright suite
+      #     has no filesystem, so it can't). No native E2E harness exists yet —
+      #     it is the work that lands in `apps/desktop/src-tauri/tests/` + a
+      #     `tauri-test` crate — so this leg is a no-op-with-notes until then:
+      #     a real step is `pnpm --filter @spherewiki/desktop exec tauri-driver`.
+      #     macOS's WKWebView is NOT tauri-driver-drivable, so verify the native
+      #     shell manually on Linux or via the /verify skill in the meantime.
       - name: native E2E (tauri-driver) — PENDING M2b.8 part 3 harness
         if: ${{ inputs.include_e2e }}
         run: |
           echo "::warning::M2b.8 part 3: no native tauri-driver E2E harness yet — leg is a documented no-op."
           echo "Verify the native shell manually on Linux until src-tauri/tests/ lands."
+          echo "Legs 1+2 (cargo check + tauri build) now run on push/PR via ci.yml's 'rust' job."
           exit 0
