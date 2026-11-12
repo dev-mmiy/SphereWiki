@@ -43,7 +43,7 @@ jobs:
       # Mirrors .tool-versions (rust 1.96.1) so the link check reproduces the pinned
       # toolchain, not the runner's distro Rust.
       - name: "Rust toolchain (mirrors .tool-versions — rust 1.96.1)"
-        uses: actions/rust-lang/setup-rust@v1
+        uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.96.1"
 
